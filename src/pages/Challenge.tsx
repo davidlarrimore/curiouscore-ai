@@ -76,11 +76,18 @@ export default function Challenge() {
     setCurrentMetadata(null);
 
     try {
+      // Get fresh session for the API call
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      
+      if (!currentSession?.access_token) {
+        throw new Error("You must be logged in to use this feature");
+      }
+
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat-instructor`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${session?.access_token}`,
+          Authorization: `Bearer ${currentSession.access_token}`,
         },
         body: JSON.stringify({
           messages: newMessages.map((m) => ({ role: m.role, content: m.content })),

@@ -150,5 +150,18 @@ export function useUserProgress(challengeId?: string) {
     }
   };
 
-  return { progress, allProgress, loading, startChallenge, updateProgress, refetch: challengeId ? fetchProgress : fetchAllProgress };
+  const resetChallenge = async (challengeId: string) => {
+    if (!user) return null;
+
+    try {
+      const data = await api.post<UserProgress>(`/progress/${challengeId}/reset`);
+      setProgress(data);
+      return data;
+    } catch (e) {
+      console.error("Error resetting challenge:", e);
+      return null;
+    }
+  };
+
+  return { progress, allProgress, loading, startChallenge, updateProgress, resetChallenge, refetch: challengeId ? fetchProgress : fetchAllProgress };
 }

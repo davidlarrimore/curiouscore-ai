@@ -1,4 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+@import 'highlight.js/styles/github-dark.css';
 
 @tailwind base;
 @tailwind components;
@@ -133,6 +134,45 @@
 
   code, pre, .font-mono {
     font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* Prose styling for markdown in chat messages */
+  .prose {
+    @apply max-w-none;
+  }
+
+  .prose code {
+    @apply text-foreground;
+  }
+
+  .prose pre {
+    @apply bg-slate-900 text-slate-100 overflow-x-auto;
+  }
+
+  .prose strong {
+    @apply text-foreground font-semibold;
+  }
+
+  .prose a {
+    @apply text-primary hover:text-primary/80;
+  }
+
+  .prose blockquote {
+    @apply border-l-primary text-muted-foreground;
+  }
+
+  .prose h1, .prose h2, .prose h3, .prose h4 {
+    @apply text-foreground;
+  }
+
+  /* Light theme code blocks */
+  :root .prose pre {
+    @apply bg-slate-900;
+  }
+
+  /* Dark theme inherits same code block styling */
+  .dark .prose pre {
+    @apply bg-slate-900;
   }
 }
 

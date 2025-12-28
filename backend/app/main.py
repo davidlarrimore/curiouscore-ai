@@ -197,6 +197,45 @@ async def start_progress(challenge_id: str, current_user: User = Depends(get_cur
             messages=[],
         )
     progress.status = "in_progress"
+    progress.started_at = datetime.utcnow()
+    progress.completed_at = None
+    db.add(progress)
+    await db.commit()
+    await db.refresh(progress)
+    return progress
+
+
+@app.post("/progress/{challenge_id}/reset", response_model=ProgressOut)
+async def reset_progress(challenge_id: str, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_session)):
+    existing = await db.execute(
+        select(UserProgress).where(
+            UserProgress.user_id == current_user.id,
+            UserProgress.challenge_id == challenge_id,
+        )
+    )
+    progress = existing.scalars().first()
+    if not progress:
+        progress = UserProgress(
+            user_id=current_user.id,
+            challenge_id=challenge_id,
+            status="not_started",
+            started_at=None,
+            messages=[],
+            progress_percent=0,
+            score=0,
+            current_phase=1,
+            mistakes_count=0,
+        )
+    else:
+        progress.status = "not_started"
+        progress.messages = []
+        progress.progress_percent = 0
+        progress.score = 0
+        progress.current_phase = 1
+        progress.mistakes_count = 0
+        progress.started_at = None
+        progress.completed_at = None
+
     db.add(progress)
     await db.commit()
     await db.refresh(progress)

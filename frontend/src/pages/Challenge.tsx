@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useParams, Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
-import { useChallenges, useUserProgress, ChatMessage, MessageMetadata } from "@/hooks/useChallenges";
+import { useChallenges, useUserProgress, ChatMessage as ChatMessageType, MessageMetadata, UserProgress } from "@/hooks/useChallenges";
 import { useProfile } from "@/hooks/useProfile";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,22 +10,23 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { ChatMessage } from "@/components/ChatMessage";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Send, ArrowLeft, Sparkles, BookOpen, Lightbulb, ExternalLink, CheckCircle2, XCircle } from "lucide-react";
+import { Loader2, Send, ArrowLeft, Sparkles, BookOpen, Lightbulb, ExternalLink, CheckCircle2, XCircle, RotateCcw } from "lucide-react";
 import { api } from "@/lib/api";
 
 export default function Challenge() {
   const { id } = useParams<{ id: string }>();
   const { user, loading: authLoading } = useAuth();
   const { challenges, loading: challengesLoading } = useChallenges();
-  const { progress, startChallenge, updateProgress } = useUserProgress(id);
+  const { progress, startChallenge, updateProgress, resetChallenge } = useUserProgress(id);
   const { addXP } = useProfile();
   const navigate = useNavigate();
   const { toast } = useToast();
 
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<ChatMessageType[]>([]);
   const [currentMetadata, setCurrentMetadata] = useState<MessageMetadata | null>(null);
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -56,22 +57,43 @@ export default function Challenge() {
   const handleStart = async () => {
     const newProgress = await startChallenge(challenge.id);
     if (newProgress) {
-      sendMessage("", true, newProgress);
+      sendMessage("Start Challenge", true, newProgress);
+    }
+  };
+
+  const handleReset = async () => {
+    if (!resetChallenge) return;
+
+    const resetProgress = await resetChallenge(challenge.id);
+    if (resetProgress) {
+      setMessages([]);
+      setCurrentMetadata(null);
+      setSelectedOption(null);
+      setInput("");
+      setIsStreaming(false);
+      toast({
+        title: "Challenge Reset",
+        description: "Your progress has been reset. Starting fresh!",
+      });
     }
   };
 
   const sendMessage = async (userMessage: string, isStart = false, startProgress?: UserProgress) => {
     if (isStreaming) return;
 
-    const newMessages: ChatMessage[] = isStart
-      ? []
-      : [...messages, { role: "user" as const, content: userMessage, timestamp: new Date().toISOString() }];
+    const timestamp = new Date().toISOString();
+    const newMessages: ChatMessageType[] = isStart
+      ? userMessage
+        ? [{ role: "user" as const, content: userMessage, timestamp }]
+        : []
+      : [...messages, { role: "user" as const, content: userMessage, timestamp }];
 
-    if (!isStart) {
+    if (!isStart || userMessage) {
       setMessages(newMessages);
-      setInput("");
-      setSelectedOption(null);
     }
+
+    setInput("");
+    setSelectedOption(null);
 
     setIsStreaming(true);
     setCurrentMetadata(null);
@@ -92,7 +114,7 @@ export default function Challenge() {
         setCurrentMetadata(metadata);
       }
 
-      const finalMessages: ChatMessage[] = [
+      const finalMessages: ChatMessageType[] = [
         ...newMessages,
         { role: "assistant", content: assistantMessage, timestamp: new Date().toISOString(), metadata: metadata || undefined },
       ];
@@ -157,189 +179,202 @@ export default function Challenge() {
   const showMCQ = currentMetadata?.questionType === "mcq" && currentMetadata?.options;
 
   return (
-    <div className="min-h-screen bg-background flex">
-      {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col">
-        {/* Header */}
-        <header className="glass-dark border-b border-border/50 p-4">
-          <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" onClick={() => navigate("/")}>
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-            <div className="flex-1">
-              <h1 className="font-bold text-lg">{challenge.title}</h1>
-              <p className="text-sm text-muted-foreground">{challenge.description}</p>
+    <div className="min-h-screen bg-background flex flex-col">
+      {/* Compact Header */}
+      <header className="border-b border-border/50 bg-card/50 backdrop-blur-sm px-4 py-2 flex-shrink-0">
+        <div className="flex items-center gap-3 max-w-full">
+          <Button variant="ghost" size="sm" onClick={() => navigate("/")} className="flex-shrink-0">
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <div className="flex-1 min-w-0">
+            <h1 className="font-semibold text-base truncate">{challenge.title}</h1>
+            <p className="text-xs text-muted-foreground truncate">{challenge.description}</p>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <Badge variant="outline" className="text-xs">
+              Phase {progress?.current_phase || 1}/5
+            </Badge>
+            <div className="text-xs text-muted-foreground">
+              Score: <span className="font-semibold text-foreground">{progress?.score || 0}</span>
             </div>
             <ThemeToggle />
           </div>
-        </header>
+        </div>
+      </header>
 
-        {/* Messages */}
-        <ScrollArea className="flex-1 p-4">
-          <div className="max-w-3xl mx-auto space-y-4">
-            {!isStarted ? (
-              <div className="flex flex-col items-center justify-center py-20 text-center">
-                <div className="w-20 h-20 rounded-2xl gradient-primary flex items-center justify-center mb-6 animate-float">
-                  <Sparkles className="h-10 w-10 text-primary-foreground" />
-                </div>
-                <h2 className="text-2xl font-bold mb-2">Ready to Begin?</h2>
-                <p className="text-muted-foreground mb-6 max-w-md">
-                  Your AI instructor will guide you through this challenge interactively.
-                </p>
-                <Button onClick={handleStart} className="gradient-primary glow-primary">
-                  Start Challenge
-                </Button>
-              </div>
-            ) : (
-              messages.map((msg, i) => (
-                <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                  <div
-                    className={`max-w-[80%] rounded-2xl px-4 py-3 ${
-                      msg.role === "user"
-                        ? "bg-primary text-primary-foreground"
-                        : "glass-dark border border-border/50"
-                    }`}
-                  >
-                    <p className="whitespace-pre-wrap">{msg.content}</p>
+      <div className="flex-1 flex overflow-hidden">
+        {/* Main Chat Area */}
+        <div className={`flex-1 flex flex-col min-w-0 transition-colors ${!isStarted ? "bg-muted/40" : ""}`}>
+          {/* Messages */}
+          <ScrollArea className="flex-1">
+            <div className="px-6 py-4 space-y-4 max-w-5xl mx-auto w-full">
+              {!isStarted ? (
+                <div className="flex flex-col items-center justify-center py-16 text-center">
+                  <div className="w-16 h-16 rounded-2xl gradient-primary flex items-center justify-center mb-4 animate-float">
+                    <Sparkles className="h-8 w-8 text-primary-foreground" />
                   </div>
-                </div>
-              ))
-            )}
-
-            {isStreaming && (
-              <div className="flex justify-start">
-                <div className="glass-dark border border-border/50 rounded-2xl px-4 py-3">
-                  <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                </div>
-              </div>
-            )}
-
-            <div ref={messagesEndRef} />
-          </div>
-        </ScrollArea>
-
-        {/* Input Area */}
-        {isStarted && progress?.status !== "completed" && (
-          <div className="p-4 border-t border-border/50 glass-dark">
-            <div className="max-w-3xl mx-auto">
-              {showMCQ ? (
-                <div className="grid grid-cols-2 gap-3">
-                  {currentMetadata.options?.map((option, i) => (
-                    <Button
-                      key={i}
-                      variant="outline"
-                      className={`h-auto py-3 px-4 text-left justify-start ${
-                        selectedOption === i ? "border-primary bg-primary/10" : ""
-                      }`}
-                      onClick={() => handleOptionSelect(i)}
-                      disabled={isStreaming}
-                    >
-                      <span className="font-mono mr-2 text-primary">{String.fromCharCode(65 + i)}.</span>
-                      {option}
-                    </Button>
-                  ))}
+                  <h2 className="text-xl font-bold mb-2">Ready to Begin?</h2>
+                  <p className="text-muted-foreground mb-4 max-w-md text-sm">
+                    Your AI instructor will guide you through this challenge interactively.
+                  </p>
+                  <Button onClick={handleStart} className="gradient-primary glow-primary">
+                    Start Challenge
+                  </Button>
                 </div>
               ) : (
-                <form onSubmit={handleSubmit} className="flex gap-2">
-                  <Input
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    placeholder="Type your answer..."
-                    disabled={isStreaming}
-                    className="flex-1"
-                  />
-                  <Button type="submit" disabled={!input.trim() || isStreaming} className="gradient-primary">
-                    <Send className="h-4 w-4" />
-                  </Button>
-                </form>
+                messages.map((msg, i) => (
+                  <ChatMessage key={i} role={msg.role} content={msg.content} timestamp={msg.timestamp} />
+                ))
               )}
-            </div>
-          </div>
-        )}
-      </div>
 
-      {/* Right Sidebar */}
-      <aside className="w-80 border-l border-border/50 glass-dark hidden lg:flex flex-col">
-        {/* Progress Section */}
-        <div className="p-4 border-b border-border/50">
-          <h3 className="font-semibold mb-4 flex items-center gap-2">
-            <CheckCircle2 className="h-4 w-4 text-primary" />
-            Progress
-          </h3>
-          <div className="space-y-4">
-            <div>
-              <div className="flex justify-between text-sm mb-2">
-                <span>Completion</span>
-                <span className="font-mono">{progress?.progress_percent || 0}%</span>
-              </div>
-              <Progress value={progress?.progress_percent || 0} className="h-2" />
-            </div>
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <p className="text-muted-foreground">Phase</p>
-                <p className="font-semibold">{progress?.current_phase || 1} / 5</p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">Score</p>
-                <p className="font-semibold">{progress?.score || 0}</p>
-              </div>
-            </div>
-            {progress && (
-              <Badge
-                variant="outline"
-                className={
-                  progress.score >= 70
-                    ? "bg-success/20 text-success border-success/30"
-                    : progress.score >= 40
-                    ? "bg-warning/20 text-warning border-warning/30"
-                    : "bg-destructive/20 text-destructive border-destructive/30"
-                }
-              >
-                {progress.score >= 70 ? "Great Progress!" : progress.score >= 40 ? "Keep Going!" : "Needs Improvement"}
-              </Badge>
-            )}
-          </div>
-        </div>
-
-        {/* Help Resources */}
-        <div className="flex-1 p-4 overflow-auto">
-          <h3 className="font-semibold mb-4 flex items-center gap-2">
-            <BookOpen className="h-4 w-4 text-accent" />
-            Resources
-          </h3>
-          <div className="space-y-3">
-            {challenge.help_resources.map((resource, i) => (
-              <a
-                key={i}
-                href={resource.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block p-3 rounded-lg bg-secondary/50 hover:bg-secondary transition-colors"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <p className="font-medium text-sm">{resource.title}</p>
-                    <p className="text-xs text-muted-foreground">{resource.description}</p>
+              {isStreaming && (
+                <div className="flex gap-3">
+                  <div className="h-8 w-8 rounded-full bg-accent flex items-center justify-center flex-shrink-0">
+                    <Loader2 className="h-4 w-4 animate-spin text-accent-foreground" />
                   </div>
-                  <ExternalLink className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                  <div className="bg-muted rounded-2xl rounded-tl-sm px-4 py-2.5 border border-border/50">
+                    <div className="flex gap-1">
+                      <span className="w-2 h-2 bg-muted-foreground/50 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                      <span className="w-2 h-2 bg-muted-foreground/50 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                      <span className="w-2 h-2 bg-muted-foreground/50 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                    </div>
+                  </div>
                 </div>
-              </a>
-            ))}
-          </div>
+              )}
 
-          {currentMetadata?.hint && (
-            <div className="mt-4 p-3 rounded-lg bg-warning/10 border border-warning/30">
-              <div className="flex items-start gap-2">
-                <Lightbulb className="h-4 w-4 text-warning flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-medium text-sm text-warning">Hint</p>
-                  <p className="text-xs text-muted-foreground">{currentMetadata.hint}</p>
-                </div>
+              <div ref={messagesEndRef} />
+            </div>
+          </ScrollArea>
+
+          {/* Compact Input Area */}
+          {isStarted && progress?.status !== "completed" && (
+            <div className="border-t border-border/50 bg-card/30 backdrop-blur-sm p-3 flex-shrink-0">
+              <div className="max-w-5xl mx-auto w-full">
+                {showMCQ ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    {currentMetadata.options?.map((option, i) => (
+                      <Button
+                        key={i}
+                        variant="outline"
+                        className={`h-auto py-2 px-3 text-left justify-start text-sm ${
+                          selectedOption === i ? "border-primary bg-primary/10" : ""
+                        }`}
+                        onClick={() => handleOptionSelect(i)}
+                        disabled={isStreaming}
+                      >
+                        <span className="font-mono mr-2 text-primary text-xs">{String.fromCharCode(65 + i)}.</span>
+                        {option}
+                      </Button>
+                    ))}
+                  </div>
+                ) : (
+                  <form onSubmit={handleSubmit} className="flex gap-2">
+                    <Input
+                      value={input}
+                      onChange={(e) => setInput(e.target.value)}
+                      placeholder="Type your answer..."
+                      disabled={isStreaming}
+                      className="flex-1"
+                    />
+                    <Button type="submit" disabled={!input.trim() || isStreaming} size="icon" className="gradient-primary flex-shrink-0">
+                      <Send className="h-4 w-4" />
+                    </Button>
+                  </form>
+                )}
               </div>
             </div>
           )}
         </div>
-      </aside>
+
+        {/* Compact Right Sidebar */}
+        <aside className="w-72 border-l border-border/50 bg-card/30 backdrop-blur-sm hidden lg:flex flex-col flex-shrink-0">
+          {/* Progress Section */}
+          <div className="p-3 border-b border-border/50">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold text-sm flex items-center gap-2">
+                <CheckCircle2 className="h-3.5 w-3.5 text-primary" />
+                Progress
+              </h3>
+              {isStarted && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleReset}
+                  disabled={isStreaming}
+                  className="h-7 px-2 text-xs gap-1"
+                >
+                  <RotateCcw className="h-3 w-3" />
+                  Reset
+                </Button>
+              )}
+            </div>
+            <div className="space-y-3">
+              <div>
+                <div className="flex justify-between text-xs mb-1.5">
+                  <span className="text-muted-foreground">Completion</span>
+                  <span className="font-mono font-medium">{progress?.progress_percent || 0}%</span>
+                </div>
+                <Progress value={progress?.progress_percent || 0} className="h-1.5" />
+              </div>
+              {progress && (
+                <Badge
+                  variant="outline"
+                  className={`w-full justify-center text-xs ${
+                    progress.score >= 70
+                      ? "bg-success/20 text-success border-success/30"
+                      : progress.score >= 40
+                      ? "bg-warning/20 text-warning border-warning/30"
+                      : "bg-destructive/20 text-destructive border-destructive/30"
+                  }`}
+                >
+                  {progress.score >= 70 ? "Great Progress!" : progress.score >= 40 ? "Keep Going!" : "Needs Improvement"}
+                </Badge>
+              )}
+            </div>
+          </div>
+
+          {/* Help Resources */}
+          <ScrollArea className="flex-1">
+            <div className="p-3">
+              <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
+                <BookOpen className="h-3.5 w-3.5 text-accent" />
+                Resources
+              </h3>
+              <div className="space-y-2">
+                {challenge.help_resources.map((resource, i) => (
+                  <a
+                    key={i}
+                    href={resource.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block p-2 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors border border-border/30"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-medium text-xs truncate">{resource.title}</p>
+                        <p className="text-xs text-muted-foreground line-clamp-2">{resource.description}</p>
+                      </div>
+                      <ExternalLink className="h-3 w-3 text-muted-foreground flex-shrink-0 mt-0.5" />
+                    </div>
+                  </a>
+                ))}
+              </div>
+
+              {currentMetadata?.hint && (
+                <div className="mt-3 p-2 rounded-lg bg-warning/10 border border-warning/30">
+                  <div className="flex items-start gap-2">
+                    <Lightbulb className="h-3.5 w-3.5 text-warning flex-shrink-0 mt-0.5" />
+                    <div className="min-w-0">
+                      <p className="font-medium text-xs text-warning">Hint</p>
+                      <p className="text-xs text-muted-foreground">{currentMetadata.hint}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </ScrollArea>
+        </aside>
+      </div>
     </div>
   );
 }

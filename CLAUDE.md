@@ -13,6 +13,7 @@ CuriousCore AI is an interactive learning platform built with React, TypeScript,
 - **Backend**: FastAPI + SQLAlchemy (SQLite for local dev, Postgres in production) with JWT auth
 - **State Management**: TanStack Query (React Query)
 - **Routing**: React Router v6
+- **Markdown Rendering**: react-markdown + remark-gfm + rehype-highlight + mermaid (for diagrams)
 
 ## Common Development Commands
 
@@ -81,6 +82,37 @@ The chat flow:
 2. Messages are posted to `/chat` with current phase/progress.
 3. Backend calls the configured AI gateway and returns content plus parsed metadata.
 4. Frontend updates progress, score, and XP based on metadata.
+
+### Chat Message Rendering
+
+Chat messages in challenges support rich markdown formatting with several enhancements:
+
+- **Markdown Rendering**: Uses `react-markdown` with GitHub Flavored Markdown (GFM) support
+- **Code Highlighting**: Syntax highlighting for code blocks via `rehype-highlight` with the GitHub Dark theme
+- **Mermaid Diagrams**: Code blocks with the `mermaid` language identifier automatically render as interactive diagrams
+
+**Component Architecture**:
+- `ChatMessage.tsx` - Main message component with markdown rendering
+- `MermaidDiagram.tsx` - Dedicated component for rendering mermaid diagrams with error handling
+
+**AI-Generated Content**:
+When generating chat responses, the LLM can include mermaid diagrams using standard markdown syntax:
+
+````markdown
+```mermaid
+flowchart TD
+    A[Start] --> B{Decision}
+    B -->|Yes| C[Action 1]
+    B -->|No| D[Action 2]
+```
+````
+
+**Mermaid Features**:
+- All diagram types supported (flowchart, sequence, class, state, gantt, etc.)
+- Dark theme matching the application design system (purple/cyan accent colors)
+- Error handling with fallback to code display
+- Dynamic import for optimized bundle size
+- Responsive with horizontal scrolling for large diagrams
 
 ### Database Schema
 

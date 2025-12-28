@@ -1,4 +1,5 @@
 import uuid
+from typing import Any, Dict, List, Optional
 from sqlalchemy import Column, String, DateTime, func, Boolean, Integer, ForeignKey, JSON, Text
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 from .database import Base
@@ -10,8 +11,8 @@ class User(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     email: Mapped[str] = mapped_column(String, unique=True, index=True)
     hashed_password: Mapped[str] = mapped_column(String)
-    username: Mapped[str | None] = mapped_column(String, nullable=True)
-    avatar_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    username: Mapped[str] = mapped_column(String, nullable=True)
+    avatar_url: Mapped[str] = mapped_column(String, nullable=True)
     role: Mapped[str] = mapped_column(String, default="user")
     xp: Mapped[int] = mapped_column(Integer, default=0)
     level: Mapped[int] = mapped_column(Integer, default=1)
@@ -54,18 +55,25 @@ class Challenge(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     title: Mapped[str] = mapped_column(String)
     description: Mapped[str] = mapped_column(Text)
-    tags: Mapped[list[str]] = mapped_column(JSON, default=list)
+    tags: Mapped[list] = mapped_column(JSON, default=list)
     difficulty: Mapped[str] = mapped_column(String, default="beginner")
     system_prompt: Mapped[str] = mapped_column(Text)
     estimated_time_minutes: Mapped[int] = mapped_column(Integer, default=30)
     xp_reward: Mapped[int] = mapped_column(Integer, default=100)
     passing_score: Mapped[int] = mapped_column(Integer, default=70)
-    help_resources: Mapped[list | None] = mapped_column(JSON, default=list)
+    help_resources: Mapped[list] = mapped_column(JSON, nullable=True, default=list)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     progress = relationship("UserProgress", back_populates="challenge", cascade="all, delete-orphan")
+    llm_config = relationship(
+        "ChallengeModel",
+        back_populates="challenge",
+        cascade="all, delete-orphan",
+        uselist=False,
+        lazy="selectin",
+    )
 
 
 class UserProgress(Base):
@@ -77,13 +85,26 @@ class UserProgress(Base):
     progress_percent: Mapped[int] = mapped_column(Integer, default=0)
     score: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(String, default="not_started")
-    messages: Mapped[list | None] = mapped_column(JSON, default=list)
+    messages: Mapped[list] = mapped_column(JSON, nullable=True, default=list)
     current_phase: Mapped[int] = mapped_column(Integer, default=1)
     mistakes_count: Mapped[int] = mapped_column(Integer, default=0)
-    started_at: Mapped[str | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    completed_at: Mapped[str | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    started_at: Mapped[str] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[str] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     user = relationship("User", back_populates="progress")
     challenge = relationship("Challenge", back_populates="progress")
+
+
+class ChallengeModel(Base):
+    __tablename__ = "challenge_models"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    challenge_id: Mapped[str] = mapped_column(String, ForeignKey("challenges.id", ondelete="CASCADE"), unique=True)
+    provider: Mapped[str] = mapped_column(String)
+    model: Mapped[str] = mapped_column(String)
+    created_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    challenge = relationship("Challenge", back_populates="llm_config", lazy="selectin")

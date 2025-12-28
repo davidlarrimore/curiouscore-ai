@@ -6,6 +6,8 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
+npm-cache/
+.npm-cache/
 
 node_modules
 dist
@@ -23,4 +25,12 @@ dist-ssr
 *.sln
 *.sw?
 
+#Ignore Environment Files
+.env
+
+/backend/app/__pycache__
+
+
+#Ignore Database
+backend/app.db
 .env

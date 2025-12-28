@@ -1,14 +1,14 @@
 import json
 from datetime import datetime
 from typing import List, AsyncIterator
-import httpx
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from .config import settings
 from .database import Base, engine, get_session
-from .models import User, Badge, UserBadge, Challenge, UserProgress
+from .models import User, Badge, UserBadge, Challenge, UserProgress, ChallengeModel
 from .schemas import (
     UserCreate,
     UserLogin,
@@ -22,9 +22,19 @@ from .schemas import (
     ProfileUpdate,
     ChatRequest,
     ChatResponse,
+    LLMProvider,
+    LLMModelOut,
+    LLMCompletionRequest,
+    LLMChatRequest,
+    ChallengeModelOut,
+    ChallengeModelUpdate,
+    ChallengeActivationUpdate,
+    ChallengePromptUpdate,
 )
 from .auth import get_password_hash, verify_password, create_access_token
-from .deps import get_current_user
+from .deps import get_current_user, require_admin
+from .llm_router import llm_router
+from .schemas import ChatMessage
 
 
 app = FastAPI(title="CuriousCore API")
@@ -64,10 +74,14 @@ async def register(payload: UserCreate, db: AsyncSession = Depends(get_session))
     if existing.scalars().first():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
 
+    admin_exists = await db.execute(select(User.id).where(User.role == "admin"))
+    should_set_admin = admin_exists.scalars().first() is None
+
     user = User(
         email=payload.email,
         hashed_password=get_password_hash(payload.password),
         username=payload.username or payload.email.split("@")[0],
+        role="admin" if should_set_admin else "user",
     )
     db.add(user)
     await db.commit()
@@ -111,13 +125,15 @@ async def my_badges(current_user: User = Depends(get_current_user), db: AsyncSes
 
 @app.get("/challenges", response_model=List[ChallengeOut])
 async def list_challenges(db: AsyncSession = Depends(get_session)):
-    result = await db.execute(select(Challenge).where(Challenge.is_active == True))  # noqa: E712
+    stmt = select(Challenge).options(selectinload(Challenge.llm_config)).where(Challenge.is_active == True)  # noqa: E712
+    result = await db.execute(stmt)
     return result.scalars().all()
 
 
 @app.get("/challenges/{challenge_id}", response_model=ChallengeOut)
 async def get_challenge(challenge_id: str, db: AsyncSession = Depends(get_session)):
-    result = await db.execute(select(Challenge).where(Challenge.id == challenge_id))
+    stmt = select(Challenge).options(selectinload(Challenge.llm_config)).where(Challenge.id == challenge_id)
+    result = await db.execute(stmt)
     challenge = result.scalars().first()
     if not challenge:
         raise HTTPException(status_code=404, detail="Challenge not found")
@@ -187,6 +203,22 @@ async def start_progress(challenge_id: str, current_user: User = Depends(get_cur
     return progress
 
 
+def _serialize_messages(messages: List[ChatMessage] | None) -> List[dict] | None:
+    if messages is None:
+        return None
+    serialized = []
+    for m in messages:
+        serialized.append(
+            {
+                "role": m.role,
+                "content": m.content,
+                "timestamp": m.timestamp.isoformat() if isinstance(m.timestamp, datetime) else m.timestamp,
+                "metadata": m.metadata.model_dump() if m.metadata else None,
+            }
+        )
+    return serialized
+
+
 @app.patch("/progress/{challenge_id}", response_model=ProgressOut)
 async def update_progress(
     challenge_id: str,
@@ -204,7 +236,11 @@ async def update_progress(
     if not progress:
         raise HTTPException(status_code=404, detail="Progress not found")
 
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    data = payload.model_dump(exclude_unset=True)
+    if "messages" in data:
+        data["messages"] = _serialize_messages(payload.messages)
+
+    for field, value in data.items():
         setattr(progress, field, value)
 
     db.add(progress)
@@ -213,34 +249,137 @@ async def update_progress(
     return progress
 
 
+@app.get("/llm/models", response_model=List[LLMModelOut])
+async def list_llm_models(provider: LLMProvider, _: User = Depends(require_admin)):
+    return await llm_router.list_models(provider)
+
+
+@app.post("/llm/completions")
+async def llm_completion(payload: LLMCompletionRequest, _: User = Depends(require_admin)):
+    content = await llm_router.completion(payload)
+    return {"content": content}
+
+
+@app.post("/llm/chat")
+async def llm_chat(payload: LLMChatRequest, _: User = Depends(require_admin)):
+    content = await llm_router.chat(payload)
+    return {"content": content}
+
+
+@app.get("/admin/challenges/models", response_model=List[ChallengeModelOut])
+async def get_challenge_models(_: User = Depends(require_admin), db: AsyncSession = Depends(get_session)):
+    result = await db.execute(select(ChallengeModel))
+    return result.scalars().all()
+
+
+@app.put("/admin/challenges/{challenge_id}/model", response_model=ChallengeModelOut)
+async def set_challenge_model(
+    challenge_id: str,
+    payload: ChallengeModelUpdate,
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_session),
+):
+    challenge_result = await db.execute(
+        select(Challenge).options(selectinload(Challenge.llm_config)).where(Challenge.id == challenge_id)
+    )
+    challenge = challenge_result.scalars().first()
+    if not challenge:
+        raise HTTPException(status_code=404, detail="Challenge not found")
+
+    existing_result = await db.execute(select(ChallengeModel).where(ChallengeModel.challenge_id == challenge_id))
+    existing = existing_result.scalars().first()
+
+    if existing:
+        existing.provider = payload.provider
+        existing.model = payload.model
+        db.add(existing)
+        await db.commit()
+        await db.refresh(existing)
+        return existing
+
+    new_mapping = ChallengeModel(challenge_id=challenge_id, provider=payload.provider, model=payload.model)
+    db.add(new_mapping)
+    await db.commit()
+    await db.refresh(new_mapping)
+    return new_mapping
+
+
+@app.get("/admin/challenges", response_model=List[ChallengeOut])
+async def list_all_challenges(_: User = Depends(require_admin), db: AsyncSession = Depends(get_session)):
+    result = await db.execute(select(Challenge).options(selectinload(Challenge.llm_config)))
+    return result.scalars().all()
+
+
+@app.patch("/admin/challenges/{challenge_id}/activation", response_model=ChallengeOut)
+async def update_challenge_activation(
+    challenge_id: str,
+    payload: ChallengeActivationUpdate,
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_session),
+):
+    result = await db.execute(
+        select(Challenge).options(selectinload(Challenge.llm_config)).where(Challenge.id == challenge_id)
+    )
+    challenge = result.scalars().first()
+    if not challenge:
+        raise HTTPException(status_code=404, detail="Challenge not found")
+    challenge.is_active = payload.is_active
+    db.add(challenge)
+    await db.commit()
+    await db.refresh(challenge)
+    return challenge
+
+
+@app.patch("/admin/challenges/{challenge_id}/prompt", response_model=ChallengeOut)
+async def update_challenge_prompt(
+    challenge_id: str,
+    payload: ChallengePromptUpdate,
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_session),
+):
+    result = await db.execute(
+        select(Challenge).options(selectinload(Challenge.llm_config)).where(Challenge.id == challenge_id)
+    )
+    challenge = result.scalars().first()
+    if not challenge:
+        raise HTTPException(status_code=404, detail="Challenge not found")
+    challenge.system_prompt = payload.system_prompt
+    db.add(challenge)
+    await db.commit()
+    await db.refresh(challenge)
+    return challenge
+
+
 @app.post("/chat", response_model=ChatResponse)
-async def chat(payload: ChatRequest, current_user: User = Depends(get_current_user)):
-    if not settings.ai_gateway_url or not settings.ai_gateway_api_key:
-        raise HTTPException(status_code=500, detail="AI gateway not configured")
+async def chat(payload: ChatRequest, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_session)):
+    if not payload.challengeId:
+        raise HTTPException(status_code=400, detail="challengeId is required")
 
-    messages_payload = [
-        {"role": m.role, "content": m.content} for m in payload.messages
-    ]
-    request_body = {
-        "model": "google/gemini-2.5-flash",
-        "messages": [{"role": "system", "content": payload.systemPrompt}, *messages_payload],
-        "stream": False,
-    }
+    challenge_result = await db.execute(
+        select(Challenge).options(selectinload(Challenge.llm_config)).where(Challenge.id == payload.challengeId)
+    )
+    challenge = challenge_result.scalars().first()
+    if not challenge:
+        raise HTTPException(status_code=404, detail="Challenge not found")
 
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        resp = await client.post(
-            settings.ai_gateway_url,
-            headers={
-                "Authorization": f"Bearer {settings.ai_gateway_api_key}",
-                "Content-Type": "application/json",
-            },
-            json=request_body,
-        )
-    if resp.status_code != 200:
-        raise HTTPException(status_code=resp.status_code, detail="AI gateway error")
+    mapping_result = await db.execute(select(ChallengeModel).where(ChallengeModel.challenge_id == payload.challengeId))
+    mapping = mapping_result.scalars().first()
 
-    data = resp.json()
-    content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+    provider = mapping.provider if mapping else settings.default_llm_provider
+    model = mapping.model if mapping else settings.default_llm_model
+
+    if not provider or not model:
+        raise HTTPException(status_code=400, detail="No model configured for this challenge")
+
+    messages_payload = [{"role": m.role, "content": m.content} for m in payload.messages]
+    chat_request = LLMChatRequest(
+        provider=provider,
+        model=model,
+        messages=messages_payload,
+        system_prompt=payload.systemPrompt or challenge.system_prompt,
+    )
+
+    content = await llm_router.chat(chat_request)
 
     metadata = None
     if content:

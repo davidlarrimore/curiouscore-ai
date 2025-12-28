@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { Loader2, Sparkles, Trophy, Zap, LogOut, User, Shield, Clock, Star } from "lucide-react";
 
 const difficultyColors = {
@@ -65,6 +66,7 @@ export default function Dashboard() {
           </div>
 
           <div className="flex items-center gap-4">
+            <ThemeToggle />
             {isAdmin && (
               <Button variant="outline" size="sm" onClick={() => navigate("/admin")} className="gap-2">
                 <Shield className="h-4 w-4" />

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { Loader2, ArrowLeft, Trophy, Zap, Star, Award, Lock } from "lucide-react";
 
 const badgeIcons: Record<string, any> = {
@@ -51,6 +52,9 @@ export default function Profile() {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <h1 className="text-xl font-bold">Profile</h1>
+          <div className="ml-auto">
+            <ThemeToggle />
+          </div>
         </div>
       </header>
 

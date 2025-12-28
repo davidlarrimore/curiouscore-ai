@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from enum import Enum
 from typing import List, Optional
 from pydantic import BaseModel, EmailStr, Field
 
@@ -72,6 +73,7 @@ class ChallengeOut(BaseModel):
     help_resources: list | None
     is_active: bool
     created_at: datetime
+    llm_config: Optional["ChallengeModelOut"] = None
 
     class Config:
         from_attributes = True
@@ -125,10 +127,70 @@ class ProgressUpdate(BaseModel):
 class ChatRequest(BaseModel):
     messages: List[ChatMessage]
     systemPrompt: str
-    challengeTitle: str
+    challengeTitle: Optional[str] = None
+    challengeId: str
     currentPhase: int
 
 
 class ChatResponse(BaseModel):
     content: str
     metadata: Optional[MessageMetadata] = None
+
+
+class LLMProvider(str, Enum):
+    openai = "openai"
+    anthropic = "anthropic"
+    gemini = "gemini"
+
+
+class LLMMessage(BaseModel):
+    role: str
+    content: str
+
+
+class LLMModelOut(BaseModel):
+    id: str
+    provider: LLMProvider
+    description: Optional[str] = None
+
+
+class LLMCompletionRequest(BaseModel):
+    provider: LLMProvider
+    model: str
+    prompt: str
+    max_tokens: Optional[int] = 256
+    temperature: Optional[float] = 0.7
+
+
+class LLMChatRequest(BaseModel):
+    provider: LLMProvider
+    model: str
+    messages: List[LLMMessage]
+    system_prompt: Optional[str] = None
+    max_tokens: Optional[int] = 512
+    temperature: Optional[float] = 0.7
+
+
+class ChallengeModelOut(BaseModel):
+    challenge_id: str
+    provider: LLMProvider
+    model: str
+
+    class Config:
+        from_attributes = True
+
+
+class ChallengeModelUpdate(BaseModel):
+    provider: LLMProvider
+    model: str
+
+
+class ChallengeActivationUpdate(BaseModel):
+    is_active: bool
+
+
+class ChallengePromptUpdate(BaseModel):
+    system_prompt: str
+
+
+ChallengeOut.model_rebuild()

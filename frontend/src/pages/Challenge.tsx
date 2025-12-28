@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Send, ArrowLeft, Sparkles, BookOpen, Lightbulb, ExternalLink, CheckCircle2, XCircle } from "lucide-react";
 import { api } from "@/lib/api";
@@ -80,6 +81,7 @@ export default function Challenge() {
         messages: newMessages.map((m) => ({ role: m.role, content: m.content, timestamp: m.timestamp, metadata: m.metadata })),
         systemPrompt: challenge.system_prompt,
         challengeTitle: challenge.title,
+        challengeId: challenge.id,
         currentPhase: startProgress?.current_phase || progress?.current_phase || 1,
       });
 
@@ -168,6 +170,7 @@ export default function Challenge() {
               <h1 className="font-bold text-lg">{challenge.title}</h1>
               <p className="text-sm text-muted-foreground">{challenge.description}</p>
             </div>
+            <ThemeToggle />
           </div>
         </header>
 

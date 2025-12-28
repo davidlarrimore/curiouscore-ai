@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/api";
 import { useAuth } from "./useAuth";
-import { Json } from "@/integrations/supabase/types";
 
 export interface Challenge {
   id: string;
@@ -67,21 +66,8 @@ export function useChallenges() {
 
   const fetchChallenges = async () => {
     try {
-      const { data, error } = await supabase
-        .from("challenges")
-        .select("*")
-        .eq("is_active", true)
-        .order("created_at", { ascending: true });
-
-      if (error) throw error;
-
-      const mapped = (data || []).map((c) => ({
-        ...c,
-        difficulty: c.difficulty as Challenge["difficulty"],
-        help_resources: parseHelpResources(c.help_resources),
-      }));
-
-      setChallenges(mapped);
+      const data = await api.get<Challenge[]>("/challenges");
+      setChallenges(data);
     } catch (e) {
       console.error("Error fetching challenges:", e);
       setError("Failed to load challenges");
@@ -116,22 +102,8 @@ export function useUserProgress(challengeId?: string) {
     if (!user || !challengeId) return;
 
     try {
-      const { data, error } = await supabase
-        .from("user_progress")
-        .select("*")
-        .eq("user_id", user.id)
-        .eq("challenge_id", challengeId)
-        .maybeSingle();
-
-      if (error) throw error;
-
-      if (data) {
-        setProgress({
-          ...data,
-          status: data.status as UserProgress["status"],
-          messages: parseMessages(data.messages),
-        });
-      }
+      const data = await api.get<UserProgress | null>(`/progress/${challengeId}`);
+      if (data) setProgress(data);
     } catch (e) {
       console.error("Error fetching progress:", e);
     } finally {
@@ -143,20 +115,8 @@ export function useUserProgress(challengeId?: string) {
     if (!user) return;
 
     try {
-      const { data, error } = await supabase
-        .from("user_progress")
-        .select("*")
-        .eq("user_id", user.id);
-
-      if (error) throw error;
-
-      const mapped = (data || []).map((p) => ({
-        ...p,
-        status: p.status as UserProgress["status"],
-        messages: parseMessages(p.messages),
-      }));
-
-      setAllProgress(mapped);
+      const data = await api.get<UserProgress[]>("/progress");
+      setAllProgress(data);
     } catch (e) {
       console.error("Error fetching all progress:", e);
     } finally {
@@ -168,64 +128,27 @@ export function useUserProgress(challengeId?: string) {
     if (!user) return null;
 
     try {
-      const { data, error } = await supabase
-        .from("user_progress")
-        .upsert({
-          user_id: user.id,
-          challenge_id: challengeId,
-          status: "in_progress",
-          started_at: new Date().toISOString(),
-          messages: [],
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      const mapped: UserProgress = {
-        ...data,
-        status: data.status as UserProgress["status"],
-        messages: [],
-      };
-
-      setProgress(mapped);
-      return mapped;
+      const data = await api.post<UserProgress>(`/progress/${challengeId}/start`);
+      setProgress(data);
+      return data;
     } catch (e) {
       console.error("Error starting challenge:", e);
       return null;
     }
   };
 
-  const updateProgress = async (updates: Partial<UserProgress>) => {
-    if (!user || !progress) return;
+  const updateProgress = async (updates: Partial<UserProgress>, targetChallengeId?: string) => {
+    if (!user) return;
 
     try {
-      const { error } = await supabase
-        .from("user_progress")
-        .update({
-          ...updates,
-          messages: updates.messages as unknown as Json,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", progress.id);
-
-      if (error) throw error;
-
-      setProgress((prev) => (prev ? { ...prev, ...updates } : null));
+      const challengeId = targetChallengeId || progress?.challenge_id;
+      if (!challengeId) return;
+      const updated = await api.patch<UserProgress>(`/progress/${challengeId}`, updates);
+      setProgress(updated);
     } catch (e) {
       console.error("Error updating progress:", e);
     }
   };
 
   return { progress, allProgress, loading, startChallenge, updateProgress, refetch: challengeId ? fetchProgress : fetchAllProgress };
-}
-
-function parseHelpResources(resources: Json): HelpResource[] {
-  if (!resources || !Array.isArray(resources)) return [];
-  return resources as unknown as HelpResource[];
-}
-
-function parseMessages(messages: Json): ChatMessage[] {
-  if (!messages || !Array.isArray(messages)) return [];
-  return messages as unknown as ChatMessage[];
 }

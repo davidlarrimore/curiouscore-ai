@@ -11,11 +11,11 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Send, ArrowLeft, Sparkles, BookOpen, Lightbulb, ExternalLink, CheckCircle2, XCircle } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/api";
 
 export default function Challenge() {
   const { id } = useParams<{ id: string }>();
-  const { user, loading: authLoading, session } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const { challenges, loading: challengesLoading } = useChallenges();
   const { progress, startChallenge, updateProgress } = useUserProgress(id);
   const { addXP } = useProfile();
@@ -55,11 +55,11 @@ export default function Challenge() {
   const handleStart = async () => {
     const newProgress = await startChallenge(challenge.id);
     if (newProgress) {
-      sendMessage("", true);
+      sendMessage("", true, newProgress);
     }
   };
 
-  const sendMessage = async (userMessage: string, isStart = false) => {
+  const sendMessage = async (userMessage: string, isStart = false, startProgress?: UserProgress) => {
     if (isStreaming) return;
 
     const newMessages: ChatMessage[] = isStart
@@ -76,111 +76,46 @@ export default function Challenge() {
     setCurrentMetadata(null);
 
     try {
-      // Get fresh session for the API call
-      const { data: { session: currentSession } } = await supabase.auth.getSession();
-      
-      if (!currentSession?.access_token) {
-        throw new Error("You must be logged in to use this feature");
-      }
-
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat-instructor`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${currentSession.access_token}`,
-        },
-        body: JSON.stringify({
-          messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
-          systemPrompt: challenge.system_prompt,
-          challengeTitle: challenge.title,
-          currentPhase: progress?.current_phase || 1,
-        }),
+      const response = await api.post<{ content: string; metadata?: MessageMetadata }>("/chat", {
+        messages: newMessages.map((m) => ({ role: m.role, content: m.content, timestamp: m.timestamp, metadata: m.metadata })),
+        systemPrompt: challenge.system_prompt,
+        challengeTitle: challenge.title,
+        currentPhase: startProgress?.current_phase || progress?.current_phase || 1,
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to get response");
-      }
+      const assistantMessage = response.content;
+      const metadata = response.metadata || null;
 
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error("No response body");
-
-      const decoder = new TextDecoder();
-      let assistantMessage = "";
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-
-        let newlineIndex: number;
-        while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
-          let line = buffer.slice(0, newlineIndex);
-          buffer = buffer.slice(newlineIndex + 1);
-
-          if (line.endsWith("\r")) line = line.slice(0, -1);
-          if (line.startsWith(":") || line.trim() === "") continue;
-          if (!line.startsWith("data: ")) continue;
-
-          const jsonStr = line.slice(6).trim();
-          if (jsonStr === "[DONE]") break;
-
-          try {
-            const parsed = JSON.parse(jsonStr);
-            const content = parsed.choices?.[0]?.delta?.content;
-            if (content) {
-              assistantMessage += content;
-              setMessages([
-                ...newMessages,
-                { role: "assistant", content: assistantMessage, timestamp: new Date().toISOString() },
-              ]);
-            }
-          } catch {
-            buffer = line + "\n" + buffer;
-            break;
-          }
-        }
-      }
-
-      // Parse metadata from response
-      const metadataMatch = assistantMessage.match(/<metadata>([\s\S]*?)<\/metadata>/);
-      let metadata: MessageMetadata | null = null;
-      let cleanContent = assistantMessage;
-
-      if (metadataMatch) {
-        try {
-          metadata = JSON.parse(metadataMatch[1]);
-          cleanContent = assistantMessage.replace(/<metadata>[\s\S]*?<\/metadata>/, "").trim();
-          setCurrentMetadata(metadata);
-        } catch (e) {
-          console.error("Failed to parse metadata:", e);
-        }
+      if (metadata) {
+        setCurrentMetadata(metadata);
       }
 
       const finalMessages: ChatMessage[] = [
         ...newMessages,
-        { role: "assistant", content: cleanContent, timestamp: new Date().toISOString(), metadata: metadata || undefined },
+        { role: "assistant", content: assistantMessage, timestamp: new Date().toISOString(), metadata: metadata || undefined },
       ];
 
       setMessages(finalMessages);
 
       // Update progress
-      if (metadata && progress) {
-        const newProgress = Math.min(100, (progress.progress_percent || 0) + (metadata.progressIncrement || 0));
-        const newScore = Math.max(0, (progress.score || 0) + (metadata.scoreChange || 0));
+      const progressState = startProgress || progress;
+      if (progressState) {
+        const newProgressValue = Math.min(100, (progressState.progress_percent || 0) + (metadata?.progressIncrement || 0));
+        const newScore = Math.max(0, (progressState.score || 0) + (metadata?.scoreChange || 0));
 
-        await updateProgress({
-          messages: finalMessages,
-          progress_percent: newProgress,
-          score: newScore,
-          current_phase: metadata.phase,
-          status: metadata.isComplete ? "completed" : "in_progress",
-          completed_at: metadata.isComplete ? new Date().toISOString() : null,
-        });
+        await updateProgress(
+          {
+            messages: finalMessages,
+            progress_percent: newProgressValue,
+            score: newScore,
+            current_phase: metadata?.phase || progressState.current_phase,
+            status: metadata?.isComplete ? "completed" : "in_progress",
+            completed_at: metadata?.isComplete ? new Date().toISOString() : null,
+          },
+          challenge.id
+        );
 
-        if (metadata.isComplete) {
+        if (metadata?.isComplete) {
           const earnedXP = Math.floor(challenge.xp_reward * (newScore / 100));
           await addXP(earnedXP);
           toast({

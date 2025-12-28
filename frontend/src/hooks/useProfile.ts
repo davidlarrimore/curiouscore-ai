@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/api";
 import { useAuth } from "./useAuth";
 
 export interface Profile {
@@ -47,13 +47,7 @@ export function useProfile() {
     if (!user) return;
 
     try {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", user.id)
-        .single();
-
-      if (error) throw error;
+      const data = await api.get<Profile>("/profile");
       setProfile(data);
     } catch (e) {
       console.error("Error fetching profile:", e);
@@ -66,33 +60,8 @@ export function useProfile() {
     if (!user) return;
 
     try {
-      const { data, error } = await supabase
-        .from("user_badges")
-        .select(`
-          id,
-          badge_id,
-          earned_at,
-          badges (
-            id,
-            name,
-            description,
-            icon,
-            badge_type,
-            xp_reward
-          )
-        `)
-        .eq("user_id", user.id);
-
-      if (error) throw error;
-
-      const mapped = (data || []).map((ub) => ({
-        id: ub.id,
-        badge_id: ub.badge_id,
-        earned_at: ub.earned_at,
-        badge: ub.badges as unknown as Badge,
-      }));
-
-      setBadges(mapped);
+      const data = await api.get<UserBadge[]>("/badges/me");
+      setBadges(data);
     } catch (e) {
       console.error("Error fetching badges:", e);
     }
@@ -102,14 +71,8 @@ export function useProfile() {
     if (!user) return;
 
     try {
-      const { error } = await supabase
-        .from("profiles")
-        .update(updates)
-        .eq("id", user.id);
-
-      if (error) throw error;
-
-      setProfile((prev) => (prev ? { ...prev, ...updates } : null));
+      const updated = await api.patch<Profile>("/profile", updates);
+      setProfile(updated);
     } catch (e) {
       console.error("Error updating profile:", e);
     }
@@ -142,19 +105,8 @@ export function useAllBadges() {
 
   const fetchBadges = async () => {
     try {
-      const { data, error } = await supabase
-        .from("badges")
-        .select("*")
-        .order("created_at", { ascending: true });
-
-      if (error) throw error;
-
-      const mapped = (data || []).map((b) => ({
-        ...b,
-        badge_type: b.badge_type as Badge["badge_type"],
-      }));
-
-      setBadges(mapped);
+      const data = await api.get<Badge[]>("/badges");
+      setBadges(data);
     } catch (e) {
       console.error("Error fetching all badges:", e);
     } finally {

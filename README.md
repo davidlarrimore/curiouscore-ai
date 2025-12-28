@@ -1,73 +1,66 @@
-# Welcome to your Lovable project
+# CuriousCore AI
 
-## Project info
+React + FastAPI challenge platform with an interactive AI instructor. Users authenticate against the FastAPI API, work through challenges via a chat workflow backed by a model gateway, track progress/XP, and manage badges and challenges through the admin view. The repo is structured as a monorepo with `frontend/` and `backend/`.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+## Stack
+- Vite + React 18 + TypeScript
+- Tailwind CSS with shadcn/ui components and lucide icons
+- React Router + TanStack Query for routing and data fetching
+- FastAPI backend (Python) with SQLAlchemy; SQLite in development, Postgres in production
+- AI gateway integration for instructor chat (HTTP endpoint and API key driven)
 
-## How can I edit this code?
-
-There are several ways of editing your application.
-
-**Use Lovable**
-
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
-
-Changes made via Lovable will be committed automatically to this repo.
-
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
+## Getting Started
+1) Install prerequisites: Node.js 18+, npm, and Python 3.11+.  
+2) Install frontend deps (from the `frontend/` directory):
 ```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
+cd frontend
+npm install
+```
+3) Install backend deps:
+```sh
+python -m venv .venv
+source .venv/bin/activate  # or .venv\\Scripts\\activate on Windows
+pip install -r backend/requirements.txt
+```
+4) Create a `.env` in the repo root (used by the backend), and optionally a `frontend/.env` for Vite overrides:
+```sh
+VITE_API_BASE_URL=http://localhost:8000
+DATABASE_URL=sqlite+aiosqlite:///./backend/app.db
+SECRET_KEY=change-me
+AI_GATEWAY_URL=https://your-model-gateway-endpoint
+AI_GATEWAY_API_KEY=your-api-key
+```
+5) Start the FastAPI backend:
+```sh
+uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000
+```
+6) Start the frontend (uses port 8080 per Vite config):
+```sh
+cd frontend
 npm run dev
 ```
+The app runs at http://localhost:8080 in development.
 
-**Edit a file directly in GitHub**
+## Available Scripts (run from `frontend/`)
+- `npm run dev` – start Vite in development mode.
+- `npm run build` – create a production build.
+- `npm run build:dev` – build using the development mode flags.
+- `npm run preview` – serve the production build locally.
+- `npm run lint` – run ESLint across the repo.
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+## Project Structure
+- `frontend/` – React app code.  
+  - `frontend/src/pages/` – route-level screens (Dashboard, Auth, Challenge, Profile, Admin).  
+  - `frontend/src/components/` – shared UI with shadcn/ui primitives under `components/ui/`.  
+  - `frontend/src/hooks/` – auth, profile, and challenge data hooks backed by the FastAPI backend.  
+  - `frontend/public/` – static assets.
+- `backend/` – FastAPI app (see `backend/app/main.py`) plus `backend/requirements.txt`.
 
-**Use GitHub Codespaces**
+## Environment & Services
+- Backend database: set `DATABASE_URL` to `sqlite+aiosqlite:///./backend/app.db` (dev) or a Postgres URI (`postgresql+asyncpg://user:pass@host/dbname`) for production.
+- API auth: `SECRET_KEY` secures JWT signing; `VITE_API_BASE_URL` points the frontend at the FastAPI server (set via `frontend/.env` or CLI).
+- AI gateway: set `AI_GATEWAY_URL` and `AI_GATEWAY_API_KEY` for the instructor chat route.
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
-
-## What technologies are used for this project?
-
-This project is built with:
-
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+## Notes
+- Tailwind utilities and the `cn` helper (`frontend/src/lib/utils.ts`) handle conditional classes.
+- The UI uses shadcn/ui styling defaults; follow the existing patterns when adding components.

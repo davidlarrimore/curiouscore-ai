@@ -130,6 +130,10 @@ export function useGameSession(challengeId: string) {
     await submitActionMutation.mutateAsync(action);
   };
 
+  const requestHint = async () => {
+    await submitAction('hint');
+  };
+
   const resetSession = () => {
     setCurrentSessionId(null);
     queryClient.removeQueries({ queryKey: ['session'] });
@@ -146,6 +150,7 @@ export function useGameSession(challengeId: string) {
     createAndStartSession,
     submitAnswer,
     submitAction,
+    requestHint,
     resetSession,
     refetch,
 

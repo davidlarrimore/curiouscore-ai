@@ -21,7 +21,7 @@ import { MCQSingleSelect } from '@/components/MCQSingleSelect';
 import { MCQMultiSelect } from '@/components/MCQMultiSelect';
 import { TrueFalseToggle } from '@/components/TrueFalseToggle';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Send, ArrowLeft, Sparkles } from 'lucide-react';
+import { Loader2, Send, ArrowLeft, Sparkles, Lightbulb, ArrowRight } from 'lucide-react';
 
 export default function ChallengeNew() {
   const { id: challengeId } = useParams<{ id: string }>();
@@ -36,6 +36,8 @@ export default function ChallengeNew() {
     error,
     createAndStartSession,
     submitAnswer,
+    submitAction,
+    requestHint,
     isCreating,
     isStarting,
     isSubmitting,
@@ -151,37 +153,73 @@ export default function ChallengeNew() {
                   setTextInput('');
                 }
               }}
-              className="flex gap-2"
+              className="space-y-3"
             >
-              <Input
-                value={textInput}
-                onChange={(e) => setTextInput(e.target.value)}
-                placeholder="Type your answer..."
-                disabled={isSubmitting}
-                className="flex-1"
-              />
-              <Button
-                type="submit"
-                disabled={!textInput.trim() || isSubmitting}
-                size="icon"
-                className="gradient-primary flex-shrink-0"
-              >
-                <Send className="h-4 w-4" />
-              </Button>
+              <div className="flex gap-2">
+                <Input
+                  value={textInput}
+                  onChange={(e) => setTextInput(e.target.value)}
+                  placeholder="Type your answer..."
+                  disabled={isSubmitting}
+                  className="flex-1"
+                />
+                <Button
+                  type="submit"
+                  disabled={!textInput.trim() || isSubmitting}
+                  size="icon"
+                  className="gradient-primary flex-shrink-0"
+                >
+                  <Send className="h-4 w-4" />
+                </Button>
+              </div>
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    if (!isSubmitting) {
+                      requestHint();
+                    }
+                  }}
+                  disabled={isSubmitting}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <Lightbulb className="h-4 w-4 mr-2" />
+                  Request Hint
+                </Button>
+              </div>
             </form>
           </Card>
         );
 
       case 'CONTINUE_GATE':
         return (
-          <Card className="p-6 text-center">
-            <Button
-              onClick={() => submitAnswer(true)}
-              disabled={isSubmitting}
-              className="gradient-primary"
-            >
-              {isSubmitting ? 'Continuing...' : 'Continue'}
-            </Button>
+          <Card className="p-6">
+            <div className="flex flex-col items-center gap-4">
+              <p className="text-sm text-muted-foreground text-center">
+                {uiResponse.step_instruction || 'Ready to continue?'}
+              </p>
+              <div className="flex gap-3">
+                <Button
+                  onClick={() => submitAction('continue')}
+                  disabled={isSubmitting}
+                  className="gradient-primary"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Continuing...
+                    </>
+                  ) : (
+                    <>
+                      Continue
+                      <ArrowRight className="h-4 w-4 ml-2" />
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
           </Card>
         );
 

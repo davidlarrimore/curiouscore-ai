@@ -177,6 +177,53 @@ async def execute_llm_tasks(
                 result = engine.apply_event(current_state, lem_event)
                 current_state = result.new_state
 
+        elif task_type == "TEACH_HINTS":
+            # Execute hint generation
+            try:
+                context = engine._build_hint_context(
+                    current_state,
+                    steps[task.get("step_index", 0)]
+                )
+                hint = await orchestrator.generate_hint(context)
+
+                # Create HINT_PROVIDED event (using GM_NARRATED event type with metadata)
+                hint_event = Event(
+                    event_type=EventType.GM_NARRATED,
+                    session_id=current_state.session_id,
+                    sequence_number=task.get("sequence_number", 0),
+                    timestamp=datetime.utcnow(),
+                    data={
+                        "content": f"💡 Hint: {hint}",
+                        "is_hint": True
+                    }
+                )
+                derived_events.append(hint_event)
+
+                # Apply event to state
+                result = engine.apply_event(current_state, hint_event)
+                current_state = result.new_state
+
+            except Exception as e:
+                # Hint generation failed - provide fallback message
+                error_message = str(e)
+                if "API key" in error_message or "not configured" in error_message:
+                    error_message = "Hint service unavailable. Try solving the problem step by step."
+
+                hint_event = Event(
+                    event_type=EventType.GM_NARRATED,
+                    session_id=current_state.session_id,
+                    sequence_number=task.get("sequence_number", 0),
+                    timestamp=datetime.utcnow(),
+                    data={
+                        "content": f"⚠️ {error_message}",
+                        "is_hint": True
+                    }
+                )
+                derived_events.append(hint_event)
+
+                result = engine.apply_event(current_state, hint_event)
+                current_state = result.new_state
+
     return current_state, derived_events
 
 
@@ -536,3 +583,162 @@ async def get_session_state(
         session=session,
         ui_response=engine._build_ui_response(state, current_step)
     )
+
+
+@router.post("/{session_id}/action", response_model=SessionStateResponse)
+async def submit_action(
+    session_id: str,
+    payload: ActionSubmission,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session)
+):
+    """
+    Submit a non-graded action (continue, hint, etc.).
+
+    Actions:
+    - "continue": Advance through CONTINUE_GATE step
+    - "hint": Request a hint from TEACH_HINTS LLM task
+    """
+    # Load session
+    result = await db.execute(
+        select(GameSession).where(GameSession.id == session_id)
+    )
+    session = result.scalar_one_or_none()
+
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    if session.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    if session.status != "active":
+        raise HTTPException(status_code=400, detail="Session not active")
+
+    # Load challenge steps
+    result = await db.execute(
+        select(ChallengeStep)
+        .where(ChallengeStep.challenge_id == session.challenge_id)
+        .order_by(ChallengeStep.step_index)
+    )
+    steps = list(result.scalars().all())
+
+    # Create engine
+    engine = GameEngine(steps)
+
+    # Hydrate current state
+    state, latest_seq = await hydrate_state(
+        db=db,
+        session_id=session_id,
+        challenge_id=session.challenge_id,
+        user_id=current_user.id,
+        engine=engine
+    )
+
+    action = payload.action.lower()
+
+    # Handle different action types
+    if action == "continue":
+        # Create USER_CONTINUED event
+        event = Event(
+            event_type=EventType.USER_CONTINUED,
+            session_id=session_id,
+            sequence_number=latest_seq + 1,
+            timestamp=datetime.utcnow(),
+            data={"action": "continue"}
+        )
+
+        # Apply through engine
+        result = engine.apply_event(state, event)
+
+        # Save event
+        await append_and_snapshot(
+            db=db,
+            session_id=session_id,
+            event_type=event.event_type,
+            event_data=event.data,
+            sequence_number=event.sequence_number,
+            state=result.new_state
+        )
+
+        # Update session record
+        session.current_step_index = result.new_state.current_step_index
+
+        if result.new_state.status == "completed":
+            session.status = "completed"
+            session.completed_at = datetime.utcnow()
+
+        await db.commit()
+        await db.refresh(session)
+
+        # Get current step for UI response
+        if result.new_state.current_step_index < len(steps):
+            current_step = steps[result.new_state.current_step_index]
+        else:
+            current_step = steps[-1]
+
+        return SessionStateResponse(
+            session=session,
+            ui_response=engine._build_ui_response(result.new_state, current_step)
+        )
+
+    elif action == "hint":
+        # Create USER_REQUESTED_HINT event
+        event = Event(
+            event_type=EventType.USER_REQUESTED_HINT,
+            session_id=session_id,
+            sequence_number=latest_seq + 1,
+            timestamp=datetime.utcnow(),
+            data={"action": "hint"}
+        )
+
+        # Apply through engine (generates LLM task)
+        result = engine.apply_event(state, event)
+
+        # Save event
+        await append_and_snapshot(
+            db=db,
+            session_id=session_id,
+            event_type=event.event_type,
+            event_data=event.data,
+            sequence_number=event.sequence_number,
+            state=result.new_state
+        )
+
+        # Execute LLM tasks if any (TEACH_HINTS)
+        if result.llm_tasks:
+            updated_state, llm_events = await execute_llm_tasks(
+                tasks=result.llm_tasks,
+                state=result.new_state,
+                steps=steps,
+                db=db,
+                engine=engine
+            )
+
+            # Save LLM events
+            for idx, llm_event in enumerate(llm_events):
+                await append_and_snapshot(
+                    db=db,
+                    session_id=session_id,
+                    event_type=llm_event.event_type,
+                    event_data=llm_event.data,
+                    sequence_number=event.sequence_number + 1 + idx,
+                    state=updated_state
+                )
+
+            result.new_state = updated_state
+
+        await db.commit()
+        await db.refresh(session)
+
+        current_step = steps[result.new_state.current_step_index]
+
+        return SessionStateResponse(
+            session=session,
+            ui_response=engine._build_ui_response(result.new_state, current_step)
+        )
+
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown action: {action}. Valid actions: continue, hint"
+        )

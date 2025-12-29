@@ -337,6 +337,38 @@ Week 5 delivered three production-ready challenges covering beginner to advanced
 
 ---
 
+## Bug Fixes
+
+### Issue 1: LEM Feedback as Meta-Commentary
+**Problem**: LEM feedback was written as commentary ABOUT the learner ("The student mentions...") instead of helpful feedback TO the learner
+**Root Cause**: LEM prompt didn't specify that feedback should be educational and addressed directly to the user
+**Fix**: Updated LEM system prompt and user message to generate helpful, encouraging feedback
+**Commit**: `1a5a7d4`
+
+**Before**:
+```
+"The student mentions 'repeatable logic,' which indicates an understanding
+of reusability, but does not elaborate on how functions help organize code
+or provide specific benefits. The answer lacks clarity and detail,
+resulting in a low score."
+```
+
+**After** (expected):
+```
+"You've identified a key benefit - reusability! Functions do let us reuse
+logic without repetition. To strengthen your answer, try explaining how
+this helps organize code or provide a specific example of when you'd use
+a function."
+```
+
+**Solution**:
+- Updated LEM system prompt to emphasize helpful, educational feedback
+- Clarified that rationale should address learner using "you" (not "the student")
+- Added guidance to highlight strengths and guide improvement
+- Focus on helping them learn, not just explaining their score
+
+---
+
 ## Production Readiness
 
 ### ✅ Complete Features
@@ -470,19 +502,26 @@ Week 5 delivered three production-ready challenges covering beginner to advanced
 
 ## Commits
 
-Week 5 commits:
+Week 5 commits (most recent first):
 
 ```
-[pending] Add Week 5: Production seed challenges with comprehensive rubrics
+1a5a7d4 Fix LEM feedback to be helpful to learners, not meta-commentary
+56e6628 Add Week 5: Production seed challenges with comprehensive rubrics
 ```
 
-This commit includes:
+**Main implementation** (`56e6628`):
 - Three production challenge seed scripts
 - 18 total challenge steps
 - 6 comprehensive rubrics for CHAT steps
 - Mixed step types (MCQ, CHAT, gates, true/false)
 - Progressive difficulty (beginner → intermediate → advanced)
 - Week 5 summary documentation
+
+**UX Fix** (`1a5a7d4`):
+- LEM feedback now educational and helpful to learners
+- Addresses user directly ("you") instead of third person
+- Specific about strengths and improvements
+- Encouraging tone focused on learning
 
 ---
 

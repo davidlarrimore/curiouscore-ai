@@ -17,7 +17,7 @@ Key Principles:
 
 from typing import List, Optional, Any
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from .events import Event, EventType
 from .state import SessionState, StepScore, DisplayMessage
@@ -29,13 +29,12 @@ class EngineResult(BaseModel):
     Result of applying an event to state.
     Contains new state, derived events, LLM tasks, and UI response.
     """
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     new_state: SessionState
     derived_events: List[Event] = []
     llm_tasks: List[dict[str, Any]] = []
     ui_response: dict[str, Any]
-
-    class Config:
-        arbitrary_types_allowed = True
 
 
 class GameEngine:

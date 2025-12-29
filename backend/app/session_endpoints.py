@@ -369,69 +369,39 @@ async def submit_attempt(
     # Apply through engine
     engine_result = engine.apply_event(state, event)
 
-    # Save event
-    next_seq = event.sequence_number
-
+    # Save event and updated state
     await append_and_snapshot(
         db=db,
         session_id=session_id,
         event_type=event.event_type,
         event_data=event.data,
-        sequence_number=next_seq,
+        sequence_number=event.sequence_number,
         state=engine_result.new_state
     )
 
-    # If handler doesn't require LEM, score immediately
-    if not handler_result.requires_lem and handler_result.score is not None:
-        # Create SCORE_AWARDED event
-        score_event = Event(
-            event_type=EventType.SCORE_AWARDED,
-            session_id=session_id,
-            sequence_number=next_seq + 1,
-            timestamp=datetime.utcnow(),
-            data={
-                "step_index": state.current_step_index,
-                "score": handler_result.score,
-                "max_possible": current_step.points_possible,
-                "passed": handler_result.passed,
-                "feedback": handler_result.feedback
-            }
-        )
+    # If handler doesn't require LEM, scoring is complete (MCQ steps)
+    # The engine already handled scoring, feedback, and advancement in _handle_user_submission
+    if not handler_result.requires_lem:
+        # Update session record with new state
+        session.total_score = engine_result.new_state.total_score
+        session.current_step_index = engine_result.new_state.current_step_index
+        session.status = engine_result.new_state.status
 
-        # Apply score event
-        score_result = engine.apply_event(engine_result.new_state, score_event)
-
-        await append_and_snapshot(
-            db=db,
-            session_id=session_id,
-            event_type=score_event.event_type,
-            event_data=score_event.data,
-            sequence_number=score_event.sequence_number,
-            state=score_result.new_state
-        )
-
-        # Add feedback message
-        score_result.new_state.add_message(
-            role="gm",
-            content=handler_result.feedback or "Answer submitted.",
-            timestamp=datetime.utcnow().isoformat()
-        )
-
-        # Update session record
-        session.total_score = score_result.new_state.total_score
-        session.current_step_index = score_result.new_state.current_step_index
-
-        # Check if session complete
-        if score_result.new_state.current_step_index >= len(steps):
-            session.status = "completed"
+        if engine_result.new_state.status == "completed":
             session.completed_at = datetime.utcnow()
 
         await db.commit()
         await db.refresh(session)
 
+        # Determine current step for UI response
+        if engine_result.new_state.current_step_index < len(steps):
+            current_step_for_ui = steps[engine_result.new_state.current_step_index]
+        else:
+            current_step_for_ui = steps[-1]  # Last step if completed
+
         return SessionStateResponse(
             session=session,
-            ui_response=engine._build_ui_response(score_result.new_state, current_step)
+            ui_response=engine._build_ui_response(engine_result.new_state, current_step_for_ui)
         )
 
     # Week 3: If requires LEM, execute LLM evaluation

@@ -42,6 +42,7 @@ export default function ChallengeNew() {
   } = useGameSession(challengeId || '');
 
   const [textInput, setTextInput] = useState('');
+  const [optimisticMessage, setOptimisticMessage] = useState<string | null>(null);
 
   // Auto-create and start session on mount
   useEffect(() => {
@@ -49,6 +50,13 @@ export default function ChallengeNew() {
       createAndStartSession();
     }
   }, []);
+
+  // Clear optimistic message when backend responds with new messages
+  useEffect(() => {
+    if (!isSubmitting && optimisticMessage) {
+      setOptimisticMessage(null);
+    }
+  }, [isSubmitting, uiResponse?.messages.length]);
 
   // Handle errors
   useEffect(() => {
@@ -137,6 +145,8 @@ export default function ChallengeNew() {
               onSubmit={(e) => {
                 e.preventDefault();
                 if (textInput.trim() && !isSubmitting) {
+                  // Show user's message optimistically
+                  setOptimisticMessage(textInput);
                   submitAnswer(textInput);
                   setTextInput('');
                 }
@@ -242,6 +252,15 @@ export default function ChallengeNew() {
                   timestamp={msg.timestamp}
                 />
               ))}
+
+              {/* Optimistic User Message */}
+              {optimisticMessage && (
+                <ChatMessage
+                  role="user"
+                  content={optimisticMessage}
+                  timestamp={new Date().toISOString()}
+                />
+              )}
 
               {/* Loading State */}
               {isSubmitting && (

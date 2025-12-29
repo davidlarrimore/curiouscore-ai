@@ -139,24 +139,88 @@ class GameEngine:
         Handle USER_SUBMITTED_ANSWER event.
         Route to appropriate step handler (implemented in Week 2).
         """
-        # Week 1: Stub implementation
-        # Week 2: Full implementation with step handlers
         step = self.steps[state.current_step_index]
+        answer = event.data.get("answer")
 
         new_state = state.model_copy(deep=True)
 
         # Add user message to display
         new_state.add_message(
             role="user",
-            content=str(event.data.get("answer", "")),
+            content=str(answer),
             timestamp=event.timestamp.isoformat()
         )
 
+        # Get appropriate step handler and process submission
+        from .step_handlers.mcq_handler import MCQStepHandler
+        from .step_handlers.chat_handler import ChatStepHandler
+        from .step_handlers.gate_handler import GateStepHandler
+
+        handler = None
+        if step.step_type in ["MCQ_SINGLE", "MCQ_MULTI", "TRUE_FALSE"]:
+            handler = MCQStepHandler()
+        elif step.step_type == "CHAT":
+            handler = ChatStepHandler()
+        elif step.step_type == "CONTINUE_GATE":
+            handler = GateStepHandler()
+
+        if not handler:
+            raise ValueError(f"No handler found for step type: {step.step_type}")
+
+        # Process submission through handler
+        result = handler.handle_submission(step, answer, new_state)
+
+        # If requires LEM (CHAT steps), queue LLM task
+        if result.requires_lem:
+            return EngineResult(
+                new_state=new_state,
+                derived_events=[],
+                llm_tasks=result.llm_tasks,
+                ui_response=self._build_ui_response(new_state, step)
+            )
+
+        # Otherwise, apply deterministic scoring (MCQ)
+        new_state.step_scores.append(StepScore(
+            step_index=state.current_step_index,
+            score=result.score or 0,
+            max_possible=step.points_possible,
+            passed=result.passed or False,
+            attempts=1
+        ))
+        new_state.total_score += (result.score or 0)
+
+        # Add feedback message
+        if result.feedback:
+            new_state.add_message(
+                role="gm",
+                content=result.feedback,
+                timestamp=datetime.utcnow().isoformat()
+            )
+
+        # Determine next action based on result and position
+        is_last_step = state.current_step_index == self.total_steps - 1
+
+        if result.advance_step:
+            if is_last_step:
+                # Completed the last step successfully
+                new_state.status = "completed"
+                new_state.current_ui_mode = "COMPLETED"
+                next_step_for_ui = step
+            else:
+                # Advance to next step
+                new_state.current_step_index += 1
+                next_step = self.steps[new_state.current_step_index]
+                new_state.current_ui_mode = next_step.step_type
+                next_step_for_ui = next_step
+        else:
+            # Failed to pass, stay on current step
+            next_step_for_ui = step
+
         return EngineResult(
             new_state=new_state,
-            derived_events=[],
-            llm_tasks=[],
-            ui_response=self._build_ui_response(new_state, step)
+            derived_events=result.derived_events,
+            llm_tasks=result.llm_tasks,
+            ui_response=self._build_ui_response(new_state, next_step_for_ui)
         )
 
     def _handle_user_continued(self, state: SessionState, event: Event) -> EngineResult:

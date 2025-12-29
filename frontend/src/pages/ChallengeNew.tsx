@@ -279,13 +279,15 @@ export default function ChallengeNew() {
           {/* Messages */}
           <ScrollArea className="flex-1 px-6 py-6">
             <div className="space-y-4">
-              {/* Step Instruction */}
-              <Card className="p-6 bg-accent/30 border-accent/50">
-                <h2 className="font-semibold mb-2">Instructions</h2>
-                <p className="text-sm text-muted-foreground">
-                  {uiResponse.step_instruction}
-                </p>
-              </Card>
+              {/* Step Instruction - Hide for CONTINUE_GATE when there are GM messages */}
+              {!(uiResponse.ui_mode === 'CONTINUE_GATE' && uiResponse.messages.length > 0) && (
+                <Card className="p-6 bg-accent/30 border-accent/50">
+                  <h2 className="font-semibold mb-2">Instructions</h2>
+                  <p className="text-sm text-muted-foreground">
+                    {uiResponse.step_instruction}
+                  </p>
+                </Card>
+              )}
 
               {/* Display Messages */}
               {uiResponse.messages.map((msg, i) => (

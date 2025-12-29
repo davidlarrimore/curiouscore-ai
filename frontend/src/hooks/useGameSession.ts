@@ -73,18 +73,35 @@ export function useGameSession(challengeId: string) {
   const createSessionMutation = useMutation({
     mutationFn: async () => {
       const response = await api.post('/sessions', { challenge_id: challengeId });
-      return response.data as GameSession;
+      const session = response.data;
+
+      if (!session || !session.id) {
+        console.error('Invalid session response:', response);
+        throw new Error('Failed to create session: Invalid response from server');
+      }
+
+      return session as GameSession;
     },
     onSuccess: (session) => {
-      setCurrentSessionId(session.id);
+      if (session && session.id) {
+        setCurrentSessionId(session.id);
+      }
     },
   });
 
   // Start session
   const startSessionMutation = useMutation({
     mutationFn: async (sessionId: string) => {
-      const response = await api.post(`/sessions/${sessionId}/start`);
-      return response.data as SessionStateResponse;
+      try {
+        const response = await api.post(`/sessions/${sessionId}/start`);
+        return response.data as SessionStateResponse;
+      } catch (error: any) {
+        // Provide user-friendly error for missing steps
+        if (error.response?.status === 400 && error.response?.data?.detail === "Challenge has no steps") {
+          throw new Error('This challenge is not yet configured for the new session-based system. Please use the test challenge or create a new one with steps.');
+        }
+        throw error;
+      }
     },
     onSuccess: (data) => {
       queryClient.setQueryData(['session', currentSessionId], data);

@@ -70,7 +70,9 @@ class GameEngine:
             ValueError: If event type is unknown
         """
         # Route to appropriate handler based on event type
-        if event.event_type == EventType.SESSION_STARTED:
+        if event.event_type == EventType.SESSION_CREATED:
+            return self._handle_session_created(state, event)
+        elif event.event_type == EventType.SESSION_STARTED:
             return self._handle_session_started(state, event)
         elif event.event_type == EventType.USER_SUBMITTED_ANSWER:
             return self._handle_user_submission(state, event)
@@ -82,6 +84,10 @@ class GameEngine:
             return self._handle_lem_result(state, event)
         elif event.event_type == EventType.GM_NARRATED:
             return self._handle_gm_narration(state, event)
+        elif event.event_type == EventType.STEP_ENTERED:
+            return self._handle_step_entered(state, event)
+        elif event.event_type == EventType.SCORE_AWARDED:
+            return self._handle_score_awarded(state, event)
         else:
             raise ValueError(f"Unknown event type: {event.event_type}")
 
@@ -345,6 +351,54 @@ class GameEngine:
             derived_events=[],
             llm_tasks=[],
             ui_response=self._build_ui_response(new_state, step)
+        )
+
+    def _handle_session_created(self, state: SessionState, event: Event) -> EngineResult:
+        """
+        Handle SESSION_CREATED event.
+        This is a no-op event that exists only for audit log.
+        State remains unchanged.
+        """
+        # No state changes - this event is just for the audit log
+        step = self.steps[0] if self.steps else None
+
+        return EngineResult(
+            new_state=state,
+            derived_events=[],
+            llm_tasks=[],
+            ui_response=self._build_ui_response(state, step) if step else {}
+        )
+
+    def _handle_step_entered(self, state: SessionState, event: Event) -> EngineResult:
+        """
+        Handle STEP_ENTERED event.
+        This is a derived event that doesn't modify state during replay.
+        State was already updated by the event that triggered this derived event.
+        """
+        step_index = event.data.get("step_index", state.current_step_index)
+        step = self.steps[step_index] if step_index < len(self.steps) else self.steps[-1]
+
+        return EngineResult(
+            new_state=state,
+            derived_events=[],
+            llm_tasks=[],
+            ui_response=self._build_ui_response(state, step)
+        )
+
+    def _handle_score_awarded(self, state: SessionState, event: Event) -> EngineResult:
+        """
+        Handle SCORE_AWARDED event.
+        This event is created when a score is awarded (already applied to state).
+        During replay, this is a no-op since scoring was already handled.
+        """
+        step_index = event.data.get("step_index", state.current_step_index)
+        step = self.steps[step_index] if step_index < len(self.steps) else self.steps[-1]
+
+        return EngineResult(
+            new_state=state,
+            derived_events=[],
+            llm_tasks=[],
+            ui_response=self._build_ui_response(state, step)
         )
 
     # ========================================================================

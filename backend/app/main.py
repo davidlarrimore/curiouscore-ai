@@ -35,6 +35,7 @@ from .auth import get_password_hash, verify_password, create_access_token
 from .deps import get_current_user, require_admin
 from .llm_router import llm_router
 from .schemas import ChatMessage
+from .session_endpoints import router as session_router
 
 
 app = FastAPI(title="CuriousCore API")
@@ -46,6 +47,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include session router for Game Master architecture
+app.include_router(session_router)
 
 
 @app.on_event("startup")

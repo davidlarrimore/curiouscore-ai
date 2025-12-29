@@ -193,4 +193,48 @@ class ChallengePromptUpdate(BaseModel):
     system_prompt: str
 
 
+# Game Master Session Schemas
+
+class SessionCreate(BaseModel):
+    challenge_id: str
+
+
+class SessionOut(BaseModel):
+    id: str
+    user_id: str
+    challenge_id: str
+    status: str
+    current_step_index: int
+    total_score: int
+    max_possible_score: int
+    mistakes_count: int
+    hints_used: int
+    created_at: datetime
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class AttemptSubmission(BaseModel):
+    answer: int | str | List[int]  # MCQ index, text answer, or list of indices
+
+
+class ActionSubmission(BaseModel):
+    action: str  # "continue", "hint", etc.
+
+
+class DisplayMessageOut(BaseModel):
+    role: str
+    content: str
+    timestamp: str
+    metadata: Optional[dict] = None
+
+
+class SessionStateResponse(BaseModel):
+    session: SessionOut
+    ui_response: dict  # UI mode, step info, messages, etc.
+
+
 ChallengeOut.model_rebuild()

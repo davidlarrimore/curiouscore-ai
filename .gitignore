@@ -28,7 +28,9 @@ dist-ssr
 #Ignore Environment Files
 .env
 
+# Python cache
 /backend/app/__pycache__
+backend/**/__pycache__/
 
 
 #Ignore Database

@@ -73,19 +73,10 @@ export function useGameSession(challengeId: string) {
   const createSessionMutation = useMutation({
     mutationFn: async () => {
       const response = await api.post('/sessions', { challenge_id: challengeId });
-      const session = response.data;
-
-      if (!session || !session.id) {
-        console.error('Invalid session response:', response);
-        throw new Error('Failed to create session: Invalid response from server');
-      }
-
-      return session as GameSession;
+      return response.data as GameSession;
     },
     onSuccess: (session) => {
-      if (session && session.id) {
-        setCurrentSessionId(session.id);
-      }
+      setCurrentSessionId(session.id);
     },
   });
 

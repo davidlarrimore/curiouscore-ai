@@ -120,18 +120,26 @@ Keep narration:
             ValueError: If LEM returns invalid JSON
         """
         # Build system prompt
-        system_prompt = """You are a precise evaluation assistant for educational content.
+        system_prompt = """You are a helpful educational evaluation assistant.
 
 Your role:
 - Evaluate answers ONLY based on the provided rubric
+- Provide helpful, encouraging feedback TO the learner
+- Be specific about what they did well and what could improve
 - Return ONLY valid JSON (no other text)
 - NEVER decide final scores (only provide assessment signals)
-- Be fair and consistent in evaluation
+
+The "rationale" field should:
+- Address the learner directly using "you" (not "the student")
+- Highlight specific strengths in their answer
+- Guide them on what's missing or could be stronger
+- Be encouraging and educational, not judgmental
+- Focus on learning, not just scoring
 
 You must respond with valid JSON matching this schema:
 {
   "raw_score": <total points>,
-  "rationale": "<brief explanation>",
+  "rationale": "<helpful feedback to the learner>",
   "criteria_scores": {
     "<criterion_name>": <points>,
     ...
@@ -262,7 +270,7 @@ Rubric:
 
 Evaluate the answer according to the rubric and return valid JSON with:
 - raw_score: Total points earned
-- rationale: Brief explanation (2-3 sentences)
+- rationale: Helpful feedback TO the learner (2-3 sentences). Address the learner directly ("you"), be specific about what they did well and what could be improved, and be encouraging. Focus on helping them learn, not just explaining their score.
 - criteria_scores: Points for each criterion
 - passed: Whether answer meets passing threshold
 

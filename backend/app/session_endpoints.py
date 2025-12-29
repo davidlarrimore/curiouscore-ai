@@ -74,25 +74,44 @@ async def execute_llm_tasks(
 
         if task_type == "GM_NARRATE":
             # Execute GM narration
-            context = engine._build_gm_context(
-                current_state,
-                steps[task.get("step_index", 0)]
-            )
-            narration = await orchestrator.narrate_gm(context)
+            try:
+                context = engine._build_gm_context(
+                    current_state,
+                    steps[task.get("step_index", 0)]
+                )
+                narration = await orchestrator.narrate_gm(context)
 
-            # Create GM_NARRATED event
-            gm_event = Event(
-                event_type=EventType.GM_NARRATED,
-                session_id=current_state.session_id,
-                sequence_number=task.get("sequence_number", 0),
-                timestamp=datetime.utcnow(),
-                data={"content": narration}
-            )
-            derived_events.append(gm_event)
+                # Create GM_NARRATED event
+                gm_event = Event(
+                    event_type=EventType.GM_NARRATED,
+                    session_id=current_state.session_id,
+                    sequence_number=task.get("sequence_number", 0),
+                    timestamp=datetime.utcnow(),
+                    data={"content": narration}
+                )
+                derived_events.append(gm_event)
 
-            # Apply event to state
-            result = engine.apply_event(current_state, gm_event)
-            current_state = result.new_state
+                # Apply event to state
+                result = engine.apply_event(current_state, gm_event)
+                current_state = result.new_state
+
+            except Exception as e:
+                # GM narration failed - create event with error message
+                error_message = str(e)
+                if "API key" in error_message or "not configured" in error_message:
+                    error_message = "LLM API not configured. Continuing without narration."
+
+                gm_event = Event(
+                    event_type=EventType.GM_NARRATED,
+                    session_id=current_state.session_id,
+                    sequence_number=task.get("sequence_number", 0),
+                    timestamp=datetime.utcnow(),
+                    data={"content": f"⚠️ Narration unavailable: {error_message}"}
+                )
+                derived_events.append(gm_event)
+
+                result = engine.apply_event(current_state, gm_event)
+                current_state = result.new_state
 
         elif task_type == "LEM_EVALUATE":
             # Execute LEM evaluation
@@ -129,9 +148,17 @@ async def execute_llm_tasks(
                 result = engine.apply_event(current_state, lem_event)
                 current_state = result.new_state
 
-            except ValueError as e:
-                # LEM returned invalid JSON - treat as failure
-                # Create LEM_EVALUATED event with 0 score
+            except Exception as e:
+                # LEM evaluation failed (API error, invalid JSON, etc.)
+                # Create LEM_EVALUATED event with 0 score and error message
+                error_message = str(e)
+
+                # Provide helpful error message for common issues
+                if "API key" in error_message or "not configured" in error_message:
+                    error_message = "LLM API key not configured. Please set ANTHROPIC_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY in your .env file."
+                elif "Invalid JSON" in error_message or "JSONDecodeError" in error_message:
+                    error_message = f"LLM returned invalid response format: {error_message}"
+
                 lem_event = Event(
                     event_type=EventType.LEM_EVALUATED,
                     session_id=current_state.session_id,
@@ -139,7 +166,7 @@ async def execute_llm_tasks(
                     timestamp=datetime.utcnow(),
                     data={
                         "raw_score": 0,
-                        "rationale": f"Evaluation failed: {str(e)}",
+                        "rationale": f"⚠️ Evaluation Error: {error_message}",
                         "criteria_scores": {},
                         "passed": False,
                         "step_index": step_index

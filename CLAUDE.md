@@ -36,6 +36,18 @@ pip install -r backend/requirements.txt
 
 # Backend: run FastAPI
 uvicorn backend.app.main:app --reload --port 8000
+
+# Backend: run tests
+# IMPORTANT: Always activate the virtual environment first!
+cd backend
+source ../.venv/bin/activate
+python -m pytest tests/ -v
+
+# Run specific test module
+python -m pytest tests/game_engine/test_engine.py -v
+
+# Run with coverage
+python -m pytest tests/ --cov=app --cov-report=html
 ```
 
 ## Architecture

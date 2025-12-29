@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import uuid
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 from sqlalchemy import Column, String, DateTime, func, Boolean, Integer, ForeignKey, JSON, Text
 from sqlalchemy.orm import relationship, Mapped, mapped_column
@@ -108,3 +111,139 @@ class ChallengeModel(Base):
     updated_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     challenge = relationship("Challenge", back_populates="llm_config", lazy="selectin")
+
+
+# ============================================================================
+# Game Master Architecture Models
+# ============================================================================
+
+
+class GameSession(Base):
+    """
+    Game session tracks user progress through a challenge using event sourcing.
+    Replaces UserProgress for the new Game Master architecture.
+    """
+    __tablename__ = "game_sessions"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    challenge_id: Mapped[str] = mapped_column(String, ForeignKey("challenges.id", ondelete="CASCADE"), index=True)
+
+    # Session state
+    status: Mapped[str] = mapped_column(String, default="created")  # created, active, completed, abandoned
+    current_step_index: Mapped[int] = mapped_column(Integer, default=0)
+
+    # Aggregate scores (engine owns these, never LLM)
+    total_score: Mapped[int] = mapped_column(Integer, default=0)
+    max_possible_score: Mapped[int] = mapped_column(Integer, default=100)
+
+    # Tracking metrics
+    mistakes_count: Mapped[int] = mapped_column(Integer, default=0)
+    hints_used: Mapped[int] = mapped_column(Integer, default=0)
+
+    # Timestamps
+    created_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    started_at: Mapped[str] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[str] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    # Relationships
+    user = relationship("User")
+    challenge = relationship("Challenge")
+    events = relationship("GameEvent", back_populates="session", cascade="all, delete-orphan", order_by="GameEvent.sequence_number")
+    snapshots = relationship("SessionSnapshot", back_populates="session", cascade="all, delete-orphan")
+
+
+class GameEvent(Base):
+    """
+    Append-only event log for deterministic replay.
+    All state changes flow through events.
+    """
+    __tablename__ = "game_events"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    session_id: Mapped[str] = mapped_column(String, ForeignKey("game_sessions.id", ondelete="CASCADE"), index=True)
+
+    # Event identification
+    event_type: Mapped[str] = mapped_column(String, index=True)  # SESSION_CREATED, USER_SUBMITTED_ANSWER, etc.
+    event_data: Mapped[dict] = mapped_column(JSON)  # Event-specific payload
+    sequence_number: Mapped[int] = mapped_column(Integer)  # For deterministic replay
+
+    # Metadata
+    created_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationship
+    session = relationship("GameSession", back_populates="events")
+
+
+class ChallengeStep(Base):
+    """
+    Individual step within a challenge.
+    Challenges are composed of multiple steps, each with specific UI mode and scoring.
+    """
+    __tablename__ = "challenge_steps"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    challenge_id: Mapped[str] = mapped_column(String, ForeignKey("challenges.id", ondelete="CASCADE"), index=True)
+    step_index: Mapped[int] = mapped_column(Integer)  # Ordering within challenge
+
+    # Step configuration
+    step_type: Mapped[str] = mapped_column(String)  # CHAT, MCQ_SINGLE, MCQ_MULTI, TRUE_FALSE, FILE_UPLOAD, CONTINUE_GATE
+    title: Mapped[str] = mapped_column(String)
+    instruction: Mapped[str] = mapped_column(Text)  # What the user needs to do
+
+    # MCQ-specific fields
+    options: Mapped[list] = mapped_column(JSON, nullable=True)  # For MCQ types
+    correct_answer: Mapped[int] = mapped_column(Integer, nullable=True)  # For MCQ_SINGLE/TRUE_FALSE (index)
+    correct_answers: Mapped[list] = mapped_column(JSON, nullable=True)  # For MCQ_MULTI (list of indices)
+
+    # Scoring configuration (engine owns this, not LLM)
+    points_possible: Mapped[int] = mapped_column(Integer, default=10)
+    passing_threshold: Mapped[float] = mapped_column(Integer, default=70)  # 70% as integer (0-100)
+
+    # LEM rubric (for CHAT type free-text evaluation)
+    rubric: Mapped[dict] = mapped_column(JSON, nullable=True)
+    # Rubric structure:
+    # {
+    #   "criteria": [{"name": "completeness", "weight": 0.4, "description": "..."}],
+    #   "examples": {"excellent": "...", "good": "...", "poor": "..."}
+    # }
+
+    # Narrative configuration
+    gm_context: Mapped[str] = mapped_column(Text, nullable=True)  # Context for GM narration
+    auto_narrate: Mapped[bool] = mapped_column(Boolean, default=True)  # Should GM narrate on step entry?
+
+    # Timestamps
+    created_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationship
+    challenge = relationship("Challenge")
+
+
+class SessionSnapshot(Base):
+    """
+    Point-in-time state snapshot for fast hydration.
+    Snapshots are created periodically (e.g., every 5 events) to avoid replaying entire event log.
+    """
+    __tablename__ = "session_snapshots"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    session_id: Mapped[str] = mapped_column(String, ForeignKey("game_sessions.id", ondelete="CASCADE"), index=True)
+
+    # Complete state at this point (SessionState as JSON)
+    snapshot_data: Mapped[dict] = mapped_column(JSON)
+    # Structure:
+    # {
+    #   "current_step_index": 2,
+    #   "step_scores": [{"step_index": 0, "score": 8, "max": 10}, ...],
+    #   "messages": [...],
+    #   "current_ui_mode": "CHAT",
+    #   "context_summary": "User has completed intro...",
+    #   "flags": {"showed_hint_on_step_1": true}
+    # }
+
+    event_sequence: Mapped[int] = mapped_column(Integer)  # Which event this snapshot is valid up to
+    created_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationship
+    session = relationship("GameSession", back_populates="snapshots")

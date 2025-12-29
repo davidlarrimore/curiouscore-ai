@@ -332,6 +332,33 @@ Provide a hint to help the learner think through this problem.
 
 ---
 
+## Bug Fixes
+
+### Issue 1: Continue Button Appears Before GM Narration
+**Problem**: Continue button visible before GM welcome message loaded
+**Root Cause**: No auto-scroll to show new messages
+**Fix**: Added auto-scroll with useRef and useEffect
+**Commit**: `ed34c72`
+
+**Solution**:
+- Added `messagesEndRef` to track scroll position
+- Added useEffect to auto-scroll when messages change
+- Added scroll anchor div at end of messages area
+- Smooth scroll behavior for better UX
+
+### Issue 2: Duplicate Messages in CONTINUE_GATE Steps
+**Problem**: Instruction appeared twice (Instructions card + GM message)
+**Root Cause**: Both instruction card and GM message shown simultaneously
+**Fix**: Conditionally hide Instructions card for CONTINUE_GATE with GM narration
+**Commit**: `658f7c4`
+
+**Solution**:
+- Hide Instructions card when `ui_mode === 'CONTINUE_GATE'` and messages exist
+- GM message already contains the instruction content
+- Non-narrated gates still show Instructions card as fallback
+
+---
+
 ## Configuration
 
 ### No New Environment Variables Required
@@ -345,20 +372,26 @@ Hints use the same orchestrator with different temperature settings.
 
 ## Commits
 
-Week 4 commits:
+Week 4 commits (most recent first):
 
 ```
-[pending] Add Week 4: Continue Gates & Hints with test challenge
+658f7c4 Fix duplicate messages in CONTINUE_GATE steps with GM narration
+ed34c72 Fix message scroll behavior in CONTINUE_GATE steps
+7b3671f Add Week 4: Continue Gates & Hints with test challenge
 ```
 
-This commit includes:
+**Main implementation** (`7b3671f`):
 - `/action` endpoint with "continue" and "hint" actions
 - TEACH_HINTS handler in `execute_llm_tasks`
 - `submitAction` and `requestHint` in frontend hook
 - Updated CONTINUE_GATE UI with better design
 - Hint button in CHAT UI
 - Week 4 test challenge seed script
-- This summary document
+- Week 4 summary document
+
+**UX Fixes** (`ed34c72`, `658f7c4`):
+- Auto-scroll to show new messages
+- Hide duplicate instructions on narrated gates
 
 ---
 

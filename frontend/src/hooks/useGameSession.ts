@@ -64,7 +64,7 @@ export function useGameSession(challengeId: string) {
     queryFn: async () => {
       if (!currentSessionId) throw new Error('No active session');
       const response = await api.get(`/sessions/${currentSessionId}/state`);
-      return response.data;
+      return response as SessionStateResponse;
     },
     enabled: !!currentSessionId,
   });
@@ -72,8 +72,9 @@ export function useGameSession(challengeId: string) {
   // Create session
   const createSessionMutation = useMutation({
     mutationFn: async () => {
-      const response = await api.post('/sessions', { challenge_id: challengeId });
-      return response.data as GameSession;
+      // API client returns unwrapped response directly
+      const session = await api.post('/sessions', { challenge_id: challengeId });
+      return session as GameSession;
     },
     onSuccess: (session) => {
       setCurrentSessionId(session.id);
@@ -83,16 +84,8 @@ export function useGameSession(challengeId: string) {
   // Start session
   const startSessionMutation = useMutation({
     mutationFn: async (sessionId: string) => {
-      try {
-        const response = await api.post(`/sessions/${sessionId}/start`);
-        return response.data as SessionStateResponse;
-      } catch (error: any) {
-        // Provide user-friendly error for missing steps
-        if (error.response?.status === 400 && error.response?.data?.detail === "Challenge has no steps") {
-          throw new Error('This challenge is not yet configured for the new session-based system. Please use the test challenge or create a new one with steps.');
-        }
-        throw error;
-      }
+      const response = await api.post(`/sessions/${sessionId}/start`);
+      return response as SessionStateResponse;
     },
     onSuccess: (data) => {
       queryClient.setQueryData(['session', currentSessionId], data);
@@ -104,7 +97,7 @@ export function useGameSession(challengeId: string) {
     mutationFn: async (answer: number | string | number[]) => {
       if (!currentSessionId) throw new Error('No active session');
       const response = await api.post(`/sessions/${currentSessionId}/attempt`, { answer });
-      return response.data as SessionStateResponse;
+      return response as SessionStateResponse;
     },
     onSuccess: (data) => {
       queryClient.setQueryData(['session', currentSessionId], data);
@@ -116,7 +109,7 @@ export function useGameSession(challengeId: string) {
     mutationFn: async (action: string) => {
       if (!currentSessionId) throw new Error('No active session');
       const response = await api.post(`/sessions/${currentSessionId}/action`, { action });
-      return response.data as SessionStateResponse;
+      return response as SessionStateResponse;
     },
     onSuccess: (data) => {
       queryClient.setQueryData(['session', currentSessionId], data);

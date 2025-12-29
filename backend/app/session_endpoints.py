@@ -303,14 +303,14 @@ async def start_session(
             engine=engine
         )
 
-        # Save LLM events
-        for llm_event in llm_events:
+        # Save LLM events (starting from event.sequence_number + 1)
+        for idx, llm_event in enumerate(llm_events):
             await append_and_snapshot(
                 db=db,
                 session_id=session_id,
                 event_type=llm_event.event_type,
                 event_data=llm_event.data,
-                sequence_number=latest_seq + 1 + llm_events.index(llm_event),
+                sequence_number=event.sequence_number + 1 + idx,
                 state=updated_state
             )
 
@@ -441,14 +441,14 @@ async def submit_attempt(
             engine=engine
         )
 
-        # Save LLM events
-        for llm_event in llm_events:
+        # Save LLM events (starting from event.sequence_number + 1)
+        for idx, llm_event in enumerate(llm_events):
             await append_and_snapshot(
                 db=db,
                 session_id=session_id,
                 event_type=llm_event.event_type,
                 event_data=llm_event.data,
-                sequence_number=next_seq + 1 + llm_events.index(llm_event),
+                sequence_number=event.sequence_number + 1 + idx,
                 state=updated_state
             )
 

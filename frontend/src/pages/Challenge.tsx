@@ -12,7 +12,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { ChatMessage } from "@/components/ChatMessage";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Send, ArrowLeft, Sparkles, BookOpen, Lightbulb, ExternalLink, CheckCircle2, XCircle, RotateCcw } from "lucide-react";
+import { Loader2, Send, ArrowLeft, Sparkles, BookOpen, Lightbulb, ExternalLink, CheckCircle2, XCircle, RotateCcw, ArrowDown } from "lucide-react";
 import { api } from "@/lib/api";
 
 export default function Challenge() {
@@ -31,7 +31,24 @@ export default function Challenge() {
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Track scroll position and unread messages
+  const [isNearBottom, setIsNearBottom] = useState(true);
+  const [unreadCount, setUnreadCount] = useState(0);
+
   const challenge = challenges.find((c) => c.id === id);
+
+  // Check if user is near bottom of scroll
+  const checkScrollPosition = () => {
+    const viewport = document.querySelector('[data-radix-scroll-area-viewport]') as HTMLDivElement;
+    if (!viewport) return;
+
+    const { scrollTop, scrollHeight, clientHeight } = viewport;
+    const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+    const nearBottom = distanceFromBottom < 100; // 100px threshold
+
+    setIsNearBottom(nearBottom);
+    if (nearBottom) setUnreadCount(0);
+  };
 
   useEffect(() => {
     if (progress?.messages) {
@@ -39,9 +56,44 @@ export default function Challenge() {
     }
   }, [progress]);
 
+  // Smart auto-scroll - only when user is near bottom
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    const viewport = document.querySelector('[data-radix-scroll-area-viewport]') as HTMLDivElement;
+    if (!viewport) return;
+
+    if (isNearBottom) {
+      viewport.scrollTo({
+        top: viewport.scrollHeight,
+        behavior: "smooth"
+      });
+    } else {
+      // User scrolled up - track unread messages
+      const lastMessage = messages[messages.length - 1];
+      if (lastMessage?.role === "assistant") {
+        setUnreadCount(prev => prev + 1);
+      }
+    }
+  }, [messages, isNearBottom]);
+
+  // Monitor scroll position
+  useEffect(() => {
+    const viewport = document.querySelector('[data-radix-scroll-area-viewport]') as HTMLDivElement;
+    if (!viewport) return;
+
+    let timeoutId: NodeJS.Timeout;
+    const throttledScroll = () => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(checkScrollPosition, 100);
+    };
+
+    viewport.addEventListener("scroll", throttledScroll);
+    checkScrollPosition(); // Initial check
+
+    return () => {
+      viewport.removeEventListener("scroll", throttledScroll);
+      clearTimeout(timeoutId);
+    };
+  }, []);
 
   if (authLoading || challengesLoading) {
     return (
@@ -223,7 +275,7 @@ export default function Challenge() {
                 </div>
               ) : (
                 messages.map((msg, i) => (
-                  <ChatMessage key={i} role={msg.role} content={msg.content} timestamp={msg.timestamp} />
+                  <ChatMessage key={msg.timestamp || i} role={msg.role} content={msg.content} timestamp={msg.timestamp} />
                 ))
               )}
 
@@ -244,6 +296,30 @@ export default function Challenge() {
 
               <div ref={messagesEndRef} />
             </div>
+
+            {/* Scroll to bottom button */}
+            {!isNearBottom && (
+              <div className="fixed bottom-24 right-8 z-10 lg:right-80">
+                <Button
+                  onClick={() => {
+                    const viewport = document.querySelector('[data-radix-scroll-area-viewport]') as HTMLDivElement;
+                    if (viewport) {
+                      viewport.scrollTo({ top: viewport.scrollHeight, behavior: "smooth" });
+                    }
+                  }}
+                  size="sm"
+                  className="gradient-primary glow-primary shadow-lg rounded-full h-10 px-4 gap-2"
+                >
+                  <ArrowDown className="h-4 w-4" />
+                  {unreadCount > 0 && (
+                    <Badge variant="secondary" className="bg-background text-foreground px-1.5 py-0.5 text-xs">
+                      {unreadCount}
+                    </Badge>
+                  )}
+                  <span className="text-sm">New messages</span>
+                </Button>
+              </div>
+            )}
           </ScrollArea>
 
           {/* Compact Input Area */}

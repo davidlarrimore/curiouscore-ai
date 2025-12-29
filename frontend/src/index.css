@@ -252,6 +252,11 @@
     background: hsl(var(--muted));
     border-radius: 3px;
   }
+
+  /* Smooth scroll for Radix ScrollArea viewport */
+  [data-radix-scroll-area-viewport] {
+    scroll-behavior: smooth !important;
+  }
 }
 
 @keyframes pulse-glow {

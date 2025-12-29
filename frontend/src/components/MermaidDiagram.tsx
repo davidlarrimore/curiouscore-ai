@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, memo } from "react";
 import { AlertCircle } from "lucide-react";
 
 interface MermaidDiagramProps {
   chart: string;
 }
 
-export function MermaidDiagram({ chart }: MermaidDiagramProps) {
+const MermaidDiagramComponent = ({ chart }: MermaidDiagramProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -143,4 +143,7 @@ export function MermaidDiagram({ chart }: MermaidDiagramProps) {
       dangerouslySetInnerHTML={{ __html: svg }}
     />
   );
-}
+};
+
+// Memoize to prevent unnecessary re-renders when parent re-renders
+export const MermaidDiagram = memo(MermaidDiagramComponent);

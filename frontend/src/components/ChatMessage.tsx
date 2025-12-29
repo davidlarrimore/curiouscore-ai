@@ -1,3 +1,4 @@
+import { memo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
@@ -12,7 +13,7 @@ interface ChatMessageProps {
   timestamp?: string;
 }
 
-export function ChatMessage({ role, content, timestamp }: ChatMessageProps) {
+const ChatMessageComponent = ({ role, content, timestamp }: ChatMessageProps) => {
   const isUser = role === "user";
 
   return (
@@ -123,4 +124,7 @@ export function ChatMessage({ role, content, timestamp }: ChatMessageProps) {
       </div>
     </div>
   );
-}
+};
+
+// Memoize to prevent unnecessary re-renders when typing in input
+export const ChatMessage = memo(ChatMessageComponent);

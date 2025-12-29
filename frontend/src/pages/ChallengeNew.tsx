@@ -5,7 +5,7 @@
  * Backend declares which input mode to show (MCQ, CHAT, CONTINUE_GATE, etc.).
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useGameSession } from '@/hooks/useGameSession';
@@ -45,6 +45,7 @@ export default function ChallengeNew() {
 
   const [textInput, setTextInput] = useState('');
   const [optimisticMessage, setOptimisticMessage] = useState<string | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Auto-create and start session on mount
   useEffect(() => {
@@ -59,6 +60,11 @@ export default function ChallengeNew() {
       setOptimisticMessage(null);
     }
   }, [isSubmitting, uiResponse?.messages.length]);
+
+  // Auto-scroll to bottom when messages change
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [uiResponse?.messages, optimisticMessage, isSubmitting]);
 
   // Handle errors
   useEffect(() => {
@@ -324,6 +330,9 @@ export default function ChallengeNew() {
                   </div>
                 </div>
               )}
+
+              {/* Scroll anchor */}
+              <div ref={messagesEndRef} />
             </div>
           </ScrollArea>
 

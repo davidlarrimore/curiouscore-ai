@@ -30,6 +30,7 @@ from .game_engine.engine import GameEngine
 from .game_engine.events import Event, EventType
 from .game_engine.state import SessionState
 from .game_engine.step_handlers import get_handler_for_step_type
+from .game_engine.llm_orchestrator import LLMOrchestrator, LEMEvaluation
 from .event_store import (
     append_event,
     hydrate_state,
@@ -38,6 +39,118 @@ from .event_store import (
 
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
+
+
+# ============================================================================
+# Helper Functions
+# ============================================================================
+
+async def execute_llm_tasks(
+    tasks: list[dict],
+    state: SessionState,
+    steps: list[ChallengeStep],
+    db: AsyncSession,
+    engine: GameEngine
+) -> tuple[SessionState, list[Event]]:
+    """
+    Execute LLM tasks and apply results to state.
+
+    Args:
+        tasks: List of LLM task dicts from engine
+        state: Current session state
+        steps: Challenge steps
+        db: Database session
+        engine: Game engine instance
+
+    Returns:
+        (updated_state, derived_events) tuple
+    """
+    orchestrator = LLMOrchestrator()
+    derived_events = []
+    current_state = state
+
+    for task in tasks:
+        task_type = task.get("task_type")
+
+        if task_type == "GM_NARRATE":
+            # Execute GM narration
+            context = engine._build_gm_context(
+                current_state,
+                steps[task.get("step_index", 0)]
+            )
+            narration = await orchestrator.narrate_gm(context)
+
+            # Create GM_NARRATED event
+            gm_event = Event(
+                event_type=EventType.GM_NARRATED,
+                session_id=current_state.session_id,
+                sequence_number=task.get("sequence_number", 0),
+                timestamp=datetime.utcnow(),
+                data={"content": narration}
+            )
+            derived_events.append(gm_event)
+
+            # Apply event to state
+            result = engine.apply_event(current_state, gm_event)
+            current_state = result.new_state
+
+        elif task_type == "LEM_EVALUATE":
+            # Execute LEM evaluation
+            answer = task.get("answer", "")
+            rubric = task.get("rubric", {})
+            step_index = task.get("step_index", 0)
+            step = steps[step_index]
+
+            context = {
+                "step_title": step.title,
+                "step_instruction": step.instruction,
+            }
+
+            try:
+                evaluation = await orchestrator.evaluate_lem(answer, rubric, context)
+
+                # Create LEM_EVALUATED event
+                lem_event = Event(
+                    event_type=EventType.LEM_EVALUATED,
+                    session_id=current_state.session_id,
+                    sequence_number=task.get("sequence_number", 0),
+                    timestamp=datetime.utcnow(),
+                    data={
+                        "raw_score": evaluation.raw_score,
+                        "rationale": evaluation.rationale,
+                        "criteria_scores": evaluation.criteria_scores,
+                        "passed": evaluation.passed,
+                        "step_index": step_index
+                    }
+                )
+                derived_events.append(lem_event)
+
+                # Apply event to state (engine enforces score clamping)
+                result = engine.apply_event(current_state, lem_event)
+                current_state = result.new_state
+
+            except ValueError as e:
+                # LEM returned invalid JSON - treat as failure
+                # Create LEM_EVALUATED event with 0 score
+                lem_event = Event(
+                    event_type=EventType.LEM_EVALUATED,
+                    session_id=current_state.session_id,
+                    sequence_number=task.get("sequence_number", 0),
+                    timestamp=datetime.utcnow(),
+                    data={
+                        "raw_score": 0,
+                        "rationale": f"Evaluation failed: {str(e)}",
+                        "criteria_scores": {},
+                        "passed": False,
+                        "step_index": step_index
+                    }
+                )
+                derived_events.append(lem_event)
+
+                result = engine.apply_event(current_state, lem_event)
+                current_state = result.new_state
+
+    return current_state, derived_events
 
 
 @router.post("", response_model=SessionOut, status_code=status.HTTP_201_CREATED)
@@ -153,12 +266,32 @@ async def start_session(
     session.started_at = datetime.utcnow()
     session.current_step_index = result.new_state.current_step_index
 
+    # Execute LLM tasks if any (Week 3)
+    if result.llm_tasks:
+        updated_state, llm_events = await execute_llm_tasks(
+            tasks=result.llm_tasks,
+            state=result.new_state,
+            steps=steps,
+            db=db,
+            engine=engine
+        )
+
+        # Save LLM events
+        for llm_event in llm_events:
+            await append_and_snapshot(
+                db=db,
+                session_id=session_id,
+                event_type=llm_event.event_type,
+                event_data=llm_event.data,
+                sequence_number=latest_seq + 1 + llm_events.index(llm_event),
+                state=updated_state
+            )
+
+        # Use updated state for UI response
+        result.new_state = updated_state
+
     await db.commit()
     await db.refresh(session)
-
-    # TODO Week 3: Execute LLM tasks if any
-    # for task in result.llm_tasks:
-    #     await execute_llm_task(task, state, db)
 
     return SessionStateResponse(
         session=session,
@@ -301,8 +434,51 @@ async def submit_attempt(
             ui_response=engine._build_ui_response(score_result.new_state, current_step)
         )
 
-    # TODO Week 3: If requires LEM, request LLM evaluation
-    # For now, just return state waiting for evaluation
+    # Week 3: If requires LEM, execute LLM evaluation
+    if handler_result.requires_lem:
+        updated_state, llm_events = await execute_llm_tasks(
+            tasks=handler_result.llm_tasks,
+            state=engine_result.new_state,
+            steps=steps,
+            db=db,
+            engine=engine
+        )
+
+        # Save LLM events
+        for llm_event in llm_events:
+            await append_and_snapshot(
+                db=db,
+                session_id=session_id,
+                event_type=llm_event.event_type,
+                event_data=llm_event.data,
+                sequence_number=next_seq + 1 + llm_events.index(llm_event),
+                state=updated_state
+            )
+
+        # Update session record
+        session.total_score = updated_state.total_score
+        session.current_step_index = updated_state.current_step_index
+
+        # Check if session complete
+        if updated_state.status == "completed":
+            session.status = "completed"
+            session.completed_at = datetime.utcnow()
+
+        await db.commit()
+        await db.refresh(session)
+
+        # Get current step for UI response
+        if updated_state.current_step_index < len(steps):
+            current_step_for_ui = steps[updated_state.current_step_index]
+        else:
+            current_step_for_ui = steps[-1]
+
+        return SessionStateResponse(
+            session=session,
+            ui_response=engine._build_ui_response(updated_state, current_step_for_ui)
+        )
+
+    # No LEM required - return as-is
     await db.commit()
     await db.refresh(session)
 

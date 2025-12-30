@@ -14,6 +14,7 @@ All endpoints require admin authorization.
 
 import uuid
 import math
+import logging
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,6 +23,8 @@ from sqlalchemy.orm import selectinload
 
 from .database import get_session
 from .deps import require_admin
+
+logger = logging.getLogger(__name__)
 from .models import (
     User,
     Challenge,
@@ -216,6 +219,9 @@ async def get_challenge_detailed(
     if not challenge:
         raise HTTPException(status_code=404, detail="Challenge not found")
 
+    print(f"========== GET CHALLENGE {challenge_id} ==========")
+    print(f"custom_variables from DB: {challenge.custom_variables}")
+
     return challenge
 
 
@@ -227,6 +233,13 @@ async def update_challenge(
     db: AsyncSession = Depends(get_session),
 ):
     """Update challenge fields."""
+    # Debug logging
+    update_data = payload.model_dump(exclude_unset=True)
+    print(f"========== UPDATE CHALLENGE {challenge_id} ==========")
+    print(f"Received update data: {update_data}")
+    logger.info(f"UPDATE CHALLENGE {challenge_id}")
+    logger.info(f"Received update data: {update_data}")
+
     stmt = select(Challenge).where(Challenge.id == challenge_id)
     result = await db.execute(stmt)
     challenge = result.scalars().first()
@@ -235,12 +248,16 @@ async def update_challenge(
         raise HTTPException(status_code=404, detail="Challenge not found")
 
     # Update fields
-    update_data = payload.model_dump(exclude_unset=True)
     for field, value in update_data.items():
+        print(f"Setting {field} = {value[:100] if isinstance(value, str) else value}")
+        logger.info(f"Setting {field} = {value}")
         setattr(challenge, field, value)
 
     await db.commit()
     await db.refresh(challenge)
+
+    print(f"Challenge after update - custom_variables: {challenge.custom_variables}")
+    logger.info(f"Challenge after update - custom_variables: {challenge.custom_variables}")
     return challenge
 
 
@@ -934,12 +951,18 @@ async def test_simple_challenge(
             detail=f"Variable substitution error: {str(e)}"
         )
 
+    # Get progress config from custom_variables if present
+    progress_config = None
+    if challenge.custom_variables and "progress_tracking" in challenge.custom_variables:
+        progress_config = challenge.custom_variables["progress_tracking"]
+
     # Inject metadata requirements
     system_prompt = inject_metadata_requirements(
         system_prompt,
         challenge.title,
         challenge.xp_reward,
-        challenge.passing_score
+        challenge.passing_score,
+        progress_config
     )
 
     # Get LLM config

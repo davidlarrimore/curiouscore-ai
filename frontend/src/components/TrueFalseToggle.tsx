@@ -11,7 +11,7 @@ import { Card } from '@/components/ui/card';
 import { Check, X } from 'lucide-react';
 
 interface TrueFalseToggleProps {
-  onSubmit: (answerIndex: number) => void;  // 0 for True, 1 for False
+  onSubmit: (answerIndex: number, answerText: string) => void;  // 0 for True, 1 for False
   disabled?: boolean;
   isSubmitting?: boolean;
 }
@@ -25,7 +25,8 @@ export function TrueFalseToggle({
 
   const handleSubmit = () => {
     if (selectedIndex !== null) {
-      onSubmit(selectedIndex);
+      const answerText = selectedIndex === 0 ? 'True' : 'False';
+      onSubmit(selectedIndex, answerText);
     }
   };
 

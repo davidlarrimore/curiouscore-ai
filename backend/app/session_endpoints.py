@@ -272,13 +272,19 @@ async def load_challenge_steps(
     # For simple challenges, create synthetic step from system_prompt
     if challenge.challenge_type == "simple":
         if not steps:
+            # Get progress config from custom_variables if present
+            progress_config = None
+            if challenge.custom_variables and "progress_tracking" in challenge.custom_variables:
+                progress_config = challenge.custom_variables["progress_tracking"]
+
             # Inject metadata requirements into the system prompt
             from .prompt_injection import inject_metadata_requirements
             enhanced_prompt = inject_metadata_requirements(
                 challenge.system_prompt or "You are a helpful teaching assistant.",
                 challenge.title,
                 challenge.xp_reward,
-                challenge.passing_score
+                challenge.passing_score,
+                progress_config
             )
 
             # Create a synthetic step with a user-friendly instruction

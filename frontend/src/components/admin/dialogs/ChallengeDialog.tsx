@@ -35,6 +35,7 @@ import { useLLMModels, useChallengeModels, useUpdateChallengeModel, type Provide
 import { VariablePicker } from "../VariablePicker";
 import { CustomVariablesEditor } from "../CustomVariablesEditor";
 import { VerificationPanel } from "../VerificationPanel";
+import { ProgressTrackingEditor } from "../ProgressTrackingEditor";
 
 interface ChallengeDialogProps {
   open: boolean;
@@ -54,6 +55,7 @@ export function ChallengeDialog({ open, onOpenChange, challengeId }: ChallengeDi
   // Challenge type and custom variables state
   const [challengeType, setChallengeType] = useState<"simple" | "advanced">("simple");
   const [customVariables, setCustomVariables] = useState<Record<string, string>>({});
+  const [progressTracking, setProgressTracking] = useState<any>(null);
   const promptRef = useRef<HTMLTextAreaElement>(null);
 
   // LLM Model selection state
@@ -104,6 +106,15 @@ export function ChallengeDialog({ open, onOpenChange, challengeId }: ChallengeDi
       const challengeTypeValue = (challenge as any).challenge_type || "simple";
       const customVarsValue = (challenge as any).custom_variables || {};
 
+      console.log("Loading challenge data:", challenge.id);
+      console.log("custom_variables from API:", customVarsValue);
+
+      // Separate progress_tracking from other custom variables
+      const { progress_tracking, ...otherCustomVars } = customVarsValue;
+
+      console.log("progress_tracking extracted:", progress_tracking);
+      console.log("other custom vars:", otherCustomVars);
+
       reset({
         title: challenge.title,
         description: challenge.description,
@@ -116,17 +127,24 @@ export function ChallengeDialog({ open, onOpenChange, challengeId }: ChallengeDi
         help_resources: challenge.help_resources || [],
         is_active: challenge.is_active,
         challenge_type: challengeTypeValue,
-        custom_variables: customVarsValue,
+        custom_variables: otherCustomVars,
       });
 
       setChallengeType(challengeTypeValue as "simple" | "advanced");
-      setCustomVariables(customVarsValue);
+      setCustomVariables(otherCustomVars);
+      setProgressTracking(progress_tracking || null);
+      console.log("Set progressTracking state to:", progress_tracking || null);
 
       // Load current model mapping
-      const currentMapping = challengeModels?.find(m => m.challenge_id === challengeId);
+      const currentMapping =
+        (challenge as any).llm_config || challengeModels?.find((m) => m.challenge_id === challengeId);
+
       if (currentMapping) {
         setSelectedProvider(currentMapping.provider);
         setSelectedModel(currentMapping.model);
+      } else {
+        setSelectedProvider("");
+        setSelectedModel("");
       }
     } else if (!isEditing) {
       reset({
@@ -189,11 +207,20 @@ export function ChallengeDialog({ open, onOpenChange, challengeId }: ChallengeDi
 
   const onSubmit = async (data: ChallengeCreatePayload) => {
     try {
+      // Merge progress_tracking into custom_variables
+      const finalCustomVariables = { ...customVariables };
+      if (progressTracking) {
+        finalCustomVariables.progress_tracking = progressTracking;
+      } else {
+        // Remove progress_tracking if disabled
+        delete finalCustomVariables.progress_tracking;
+      }
+
       // Include challenge_type and custom_variables in the submission
       const submitData = {
         ...data,
         challenge_type: challengeType,
-        custom_variables: customVariables,
+        custom_variables: finalCustomVariables,
       };
 
       let finalChallengeId = challengeId;
@@ -403,6 +430,13 @@ export function ChallengeDialog({ open, onOpenChange, challengeId }: ChallengeDi
                       onChange={setCustomVariables}
                     />
 
+                    {/* Progress Tracking Editor */}
+                    <ProgressTrackingEditor
+                      config={progressTracking}
+                      onChange={setProgressTracking}
+                      xpReward={watch("xp_reward") || 100}
+                    />
+
                     {/* Verification Panel */}
                     <VerificationPanel
                       systemPrompt={systemPrompt || ""}
@@ -464,6 +498,16 @@ export function ChallengeDialog({ open, onOpenChange, challengeId }: ChallengeDi
                         />
                       </SelectTrigger>
                       <SelectContent>
+                        {selectedModel && !models?.some((model) => model.id === selectedModel) && (
+                          <SelectItem value={selectedModel}>
+                            <div className="flex flex-col">
+                              <span>{selectedModel}</span>
+                              <span className="text-xs text-muted-foreground">
+                                Saved selection (not in available list)
+                              </span>
+                            </div>
+                          </SelectItem>
+                        )}
                         {models && models.length > 0 ? (
                           models.map((model) => (
                             <SelectItem key={model.id} value={model.id}>

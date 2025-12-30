@@ -401,12 +401,18 @@ async def chat(payload: ChatRequest, current_user: User = Depends(get_current_us
                 challenge.custom_variables if hasattr(challenge, 'custom_variables') else None
             )
 
+            # Get progress config from custom_variables if present
+            progress_config = None
+            if challenge.custom_variables and "progress_tracking" in challenge.custom_variables:
+                progress_config = challenge.custom_variables["progress_tracking"]
+
             # Inject metadata requirements
             system_prompt = inject_metadata_requirements(
                 system_prompt,
                 challenge.title,
                 challenge.xp_reward,
-                challenge.passing_score
+                challenge.passing_score,
+                progress_config
             )
         except ValueError as e:
             raise HTTPException(

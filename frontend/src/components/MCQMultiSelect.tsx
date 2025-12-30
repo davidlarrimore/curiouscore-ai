@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils';
 
 interface MCQMultiSelectProps {
   options: string[];
-  onSubmit: (selectedIndices: number[]) => void;
+  onSubmit: (selectedIndices: number[], selectedTexts: string[]) => void;
   disabled?: boolean;
   isSubmitting?: boolean;
 }
@@ -41,7 +41,8 @@ export function MCQMultiSelect({
 
   const handleSubmit = () => {
     const indices = Array.from(selectedIndices).sort((a, b) => a - b);
-    onSubmit(indices);
+    const texts = indices.map(i => options[i]);
+    onSubmit(indices, texts);
   };
 
   return (

@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils';
 
 interface MCQSingleSelectProps {
   options: string[];
-  onSubmit: (selectedIndex: number) => void;
+  onSubmit: (selectedIndex: number, selectedText: string) => void;
   disabled?: boolean;
   isSubmitting?: boolean;
 }
@@ -30,7 +30,7 @@ export function MCQSingleSelect({
 
   const handleSubmit = () => {
     if (selectedIndex !== null) {
-      onSubmit(selectedIndex);
+      onSubmit(selectedIndex, options[selectedIndex]);
     }
   };
 

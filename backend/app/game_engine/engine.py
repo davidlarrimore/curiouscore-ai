@@ -382,18 +382,55 @@ class GameEngine:
 
                 # Switch UI mode based on questionType
                 question_type = metadata.get("questionType", "text")
+
+                # Initialize current_ui_data with progress tracking fields if present
+                ui_data = {}
+
+                # Add progress tracking fields (Questions mode)
+                if "questionNumber" in metadata:
+                    ui_data["question_number"] = metadata["questionNumber"]
+                if "totalQuestions" in metadata:
+                    ui_data["total_questions"] = metadata["totalQuestions"]
+                if "progressPercent" in metadata:
+                    ui_data["progress_percent"] = metadata["progressPercent"]
+
+                # Add progress tracking fields (Phases mode)
+                if "phase" in metadata:
+                    ui_data["phase"] = metadata["phase"]
+                if "totalPhases" in metadata:
+                    ui_data["total_phases"] = metadata["totalPhases"]
+                if "phaseName" in metadata:
+                    ui_data["phase_name"] = metadata["phaseName"]
+
+                # Add progress tracking fields (Milestones mode)
+                if "milestoneId" in metadata:
+                    ui_data["milestone_id"] = metadata["milestoneId"]
+                if "totalMilestones" in metadata:
+                    ui_data["total_milestones"] = metadata["totalMilestones"]
+                if "achievedMilestones" in metadata:
+                    ui_data["achieved_milestones"] = metadata["achievedMilestones"]
+
+                # Add progress tracking fields (Triggers mode)
+                if "triggerId" in metadata:
+                    ui_data["trigger_id"] = metadata["triggerId"]
+                if "totalTriggers" in metadata:
+                    ui_data["total_triggers"] = metadata["totalTriggers"]
+                if "activatedTriggers" in metadata:
+                    ui_data["activated_triggers"] = metadata["activatedTriggers"]
+
                 if question_type == "mcq":
                     new_state.current_ui_mode = "MCQ_SINGLE"
                     # Store options in current_ui_data for the UI
                     options = metadata.get("options", [])
                     if options:
-                        new_state.current_ui_data = {"options": options}
+                        ui_data["options"] = options
                 elif question_type == "text":
                     new_state.current_ui_mode = "CHAT"
-                    new_state.current_ui_data = None
                 elif question_type == "upload":
                     new_state.current_ui_mode = "FILE_UPLOAD"
-                    new_state.current_ui_data = None
+
+                # Set current_ui_data with all collected fields
+                new_state.current_ui_data = ui_data if ui_data else None
 
             except json.JSONDecodeError:
                 # If metadata parsing fails, just use content as-is
@@ -483,16 +520,19 @@ class GameEngine:
             "progress_percentage": state.calculate_final_percentage()
         }
 
-        # Add mode-specific data
+        # Merge all current_ui_data fields (includes progress tracking fields and dynamic options)
+        if state.current_ui_data:
+            ui_data.update(state.current_ui_data)
+
+        # Add mode-specific data (fallback for Advanced challenges)
         if state.current_ui_mode in ["MCQ_SINGLE", "MCQ_MULTI"]:
-            # For Simple challenges, use dynamic options from current_ui_data
-            # For Advanced challenges, use step.options
-            if state.current_ui_data and "options" in state.current_ui_data:
-                ui_data["options"] = state.current_ui_data["options"]
-            else:
+            # For Simple challenges, options should already be in current_ui_data
+            # For Advanced challenges, use step.options as fallback
+            if "options" not in ui_data:
                 ui_data["options"] = current_step.options
         elif state.current_ui_mode == "TRUE_FALSE":
-            ui_data["options"] = ["True", "False"]
+            if "options" not in ui_data:
+                ui_data["options"] = ["True", "False"]
 
         return ui_data
 

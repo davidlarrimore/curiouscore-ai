@@ -122,6 +122,8 @@ export function useAdminChallengeDetailed(challengeId: string | null) {
       return api.get<ChallengeDetailed>(`/admin/challenges/${challengeId}`);
     },
     enabled: !!challengeId,
+    staleTime: 0, // Always fetch fresh data
+    gcTime: 0, // Don't cache (formerly cacheTime in v4)
   });
 }
 

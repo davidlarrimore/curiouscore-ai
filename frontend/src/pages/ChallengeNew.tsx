@@ -66,7 +66,9 @@ export default function ChallengeNew() {
   const [showResetDialog, setShowResetDialog] = useState(false);
   const challenge = challenges.find((c) => c.id === challengeId);
 
-  const progressPercentage = uiResponse?.total_steps
+  const progressPercentage = uiResponse?.progress_percent !== undefined
+    ? uiResponse.progress_percent
+    : uiResponse?.total_steps
     ? ((uiResponse.step_index + 1) / uiResponse.total_steps) * 100
     : 0;
 
@@ -96,7 +98,9 @@ export default function ChallengeNew() {
             content: [
               `Challenge: ${challenge?.title || 'Challenge'}`,
               `Description: ${challenge?.description || ''}`,
-              `Step: ${uiResponse.step_title} (Step ${uiResponse.step_index + 1} of ${uiResponse.total_steps})`,
+              uiResponse.question_number !== undefined && uiResponse.total_questions !== undefined
+                ? `Question ${uiResponse.question_number} of ${uiResponse.total_questions}`
+                : `Step: ${uiResponse.step_title} (Step ${uiResponse.step_index + 1} of ${uiResponse.total_steps})`,
               `Instruction: ${uiResponse.step_instruction}`,
               `Status: ${uiResponse.status} | Session: ${session?.status || 'unknown'} | Score ${uiResponse.score}/${uiResponse.max_score} | Progress ${Math.round(progressPercentage)}%`,
               `Resource catalog:\n${resourceNotes || 'No resources provided.'}`,
@@ -220,7 +224,10 @@ export default function ChallengeNew() {
         return (
           <MCQSingleSelect
             options={options || []}
-            onSubmit={submitAnswer}
+            onSubmit={(index, text) => {
+              setOptimisticMessage(text);
+              submitAnswer(index);
+            }}
             isSubmitting={isSubmitting}
           />
         );
@@ -229,7 +236,10 @@ export default function ChallengeNew() {
         return (
           <MCQMultiSelect
             options={options || []}
-            onSubmit={submitAnswer}
+            onSubmit={(indices, texts) => {
+              setOptimisticMessage(texts.join(', '));
+              submitAnswer(indices);
+            }}
             isSubmitting={isSubmitting}
           />
         );
@@ -237,7 +247,10 @@ export default function ChallengeNew() {
       case 'TRUE_FALSE':
         return (
           <TrueFalseToggle
-            onSubmit={submitAnswer}
+            onSubmit={(index, text) => {
+              setOptimisticMessage(text);
+              submitAnswer(index);
+            }}
             isSubmitting={isSubmitting}
           />
         );

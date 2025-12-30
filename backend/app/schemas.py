@@ -82,14 +82,14 @@ class ChallengeOut(BaseModel):
 
 
 class MessageMetadata(BaseModel):
-    questionType: str
+    questionType: Optional[str] = None
     options: Optional[List[str]] = None
     correctAnswer: Optional[int] = None
-    phase: int
-    progressIncrement: int
-    scoreChange: int
+    phase: Optional[int] = None
+    progressIncrement: Optional[int] = None
+    scoreChange: Optional[int] = None
     hint: Optional[str] = None
-    isComplete: bool
+    isComplete: Optional[bool] = None
 
 
 class ChatMessage(BaseModel):

@@ -1,33 +1,31 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- `frontend/` contains the React app.
-  - `frontend/src/pages/` holds route-level screens (Dashboard, Auth, Challenge, Profile, Admin).
-  - `frontend/src/components/` hosts reusable UI, with shadcn/ui primitives under `frontend/src/components/ui/`.
-  - `frontend/src/hooks/` contains custom React hooks for auth and data fetching.
-  - `frontend/src/lib/api.ts` provides the frontend API client to the FastAPI backend.
-  - `frontend/public/` stores static assets.
-- `backend/` hosts the FastAPI app, models, and configuration.
+- `frontend/` is the React 18 + Vite app. Key paths: `src/pages/` (Index, Dashboard, Auth, ChallengeNew session UI, Profile, Admin, NotFound), `src/components/` (MCQ/TrueFalse inputs, ChatMessage, shadcn primitives under `components/ui`), `src/hooks/` (`useGameSession`, `useAuth`, `useChallenges`, etc.), `src/lib/api.ts` (fetch client), and `public/` for static assets.
+- `backend/` is the FastAPI service. Key modules: `app/main.py` (auth/profile/progress APIs and admin routes), `app/session_endpoints.py` (Game Master session lifecycle), `app/game_engine/` (engine, events, state, step handlers, LLM orchestrator), `app/event_store.py` (event sourcing + snapshots), `app/llm_router.py` (OpenAI/Anthropic/Gemini), `app/models.py`/`schemas.py`, and `backend/tests/` for pytest suites. Seed scripts live at `backend/seed_production_*.py` plus older week seeds. `scripts/verify.sh` builds frontend, compiles backend imports, and checks LLM connectivity.
 
 ## Build, Test, and Development Commands
-- Frontend: from `frontend/` run `npm i`, `npm run dev`, `npm run build`, `npm run build:dev`, `npm run preview`, `npm run lint`.
-- Backend: create a virtualenv and install `pip install -r backend/requirements.txt`; run with `uvicorn backend.app.main:app --reload --port 8000`.
+- Frontend (from `frontend/`): `npm install`, `npm run dev` (port 8080), `npm run build`, `npm run build:dev`, `npm run preview`, `npm run lint`.
+- Backend (from `backend/`): create a venv, `pip install -r requirements.txt`, run `uvicorn app.main:app --reload --port 8000`.
+- Seeds: `python seed_production_functions.py`, `seed_production_git.py`, `seed_production_api.py` (optional week seeds also available).
+- Repo-level check: `scripts/verify.sh` (needs Node + Python; LLM connectivity steps require provider API keys).
 
 ## Coding Style & Naming Conventions
-- TypeScript + React with 2-space indentation, double quotes, and semicolons (match existing files).
-- Prefer functional components and hooks; keep UI in `frontend/src/components/` and pages in `frontend/src/pages/`.
-- Use the `@/` alias for imports from `frontend/src/` (configured in Vite/TS).
-- Tailwind CSS is the primary styling method; use `cn()` from `frontend/src/lib/utils.ts` for conditional classes.
+- TypeScript + React with 2-space indentation and semicolons; follow surrounding quote style (mostly double quotes).
+- Keep pages in `frontend/src/pages/`, shared UI in `frontend/src/components/`, hooks in `frontend/src/hooks/`, and use the `@/` alias for imports from `frontend/src/`.
+- Tailwind CSS + shadcn/ui; use `cn()` from `frontend/src/lib/utils.ts` for conditional classes.
+- Game Master flow: frontend relies on `useGameSession` and `/sessions` API responses for UI mode (MCQ_SINGLE, MCQ_MULTI, TRUE_FALSE, CHAT, CONTINUE_GATE). Keep game logic on the backend; avoid client-side inference of progression or scoring.
 
 ## Testing Guidelines
-- There are no automated test scripts in `package.json` today.
-- If you add tests, document how to run them and keep naming consistent (e.g., `*.test.tsx`).
+- Backend tests use pytest. From `backend/` run `pytest tests -v` (integration: `tests/test_week6_integration.py` and `test_api_regression.py`; engine unit tests under `tests/game_engine/`; connectivity tests require LLM keys).
+- Frontend currently ships linting only (`npm run lint`); no Jest/RTL tests are present.
+- `scripts/verify.sh` builds the frontend, compiles backend modules, and runs LLM connectivity checks plus `backend.tests.test_llm_connectivity` (requires API keys).
 
 ## Commit & Pull Request Guidelines
-- Commit history uses short, imperative summaries (e.g., "Fix challenge auth tokens"). No strict convention enforced.
-- PRs should include: a clear description, the motivation or linked issue, and screenshots for UI changes.
-- Note any backend API or schema changes in the PR description.
+- Commits are short, imperative summaries (e.g., "Fix challenge auth tokens"). No strict convention enforced.
+- PRs should include a clear description, motivation or linked issue, and screenshots for UI changes. Call out any backend API or schema changes.
 
 ## Configuration & Environment
-- Required env vars: `VITE_API_BASE_URL`, `DATABASE_URL`, `SECRET_KEY`, `AI_GATEWAY_URL`, `AI_GATEWAY_API_KEY` (create a local `.env`; add a `frontend/.env` for Vite overrides if needed).
-- FastAPI listens on port 8000 by default; frontend dev server on 8080.
+- Backend `.env` (reads from `backend/.env` or repo root): `DATABASE_URL`, `SECRET_KEY`, `ALGORITHM` (HS256 default), `ACCESS_TOKEN_EXPIRES_MINUTES` (default set), optional `AI_GATEWAY_URL`/`AI_GATEWAY_API_KEY`, LLM keys (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, with optional base URLs), `DEFAULT_LLM_PROVIDER`, `DEFAULT_LLM_MODEL`, `CORS_ORIGINS`. At least one LLM key is needed for GM/LEM/hints; defaults fall back to Anthropic Sonnet.
+- Frontend: `VITE_API_BASE_URL` (defaults to `http://localhost:8000` if unset).
+- FastAPI defaults to port 8000; Vite dev server uses 8080 (CORS allows 8080 and 5173 by default).

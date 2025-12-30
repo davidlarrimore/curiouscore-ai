@@ -22,7 +22,15 @@ import { MCQSingleSelect } from '@/components/MCQSingleSelect';
 import { MCQMultiSelect } from '@/components/MCQMultiSelect';
 import { TrueFalseToggle } from '@/components/TrueFalseToggle';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Send, ArrowLeft, Sparkles, Lightbulb, ArrowRight, LayoutDashboard, User, Shield, LogOut, Bot, Info, RefreshCw, BookOpen } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Loader2, Send, ArrowLeft, Sparkles, Lightbulb, ArrowRight, LayoutDashboard, User, Shield, LogOut, Bot, Info, RefreshCw, BookOpen, RotateCcw } from 'lucide-react';
 import { api } from '@/lib/api';
 import ReactMarkdown from 'react-markdown';
 
@@ -42,6 +50,7 @@ export default function ChallengeNew() {
     submitAnswer,
     submitAction,
     requestHint,
+    resetSession,
     isCreating,
     isStarting,
     isSubmitting,
@@ -54,6 +63,7 @@ export default function ChallengeNew() {
   const [isSidebarInsightLoading, setIsSidebarInsightLoading] = useState(false);
   const [sidebarInsightError, setSidebarInsightError] = useState<string | null>(null);
   const [insightUpdatedAt, setInsightUpdatedAt] = useState<string | null>(null);
+  const [showResetDialog, setShowResetDialog] = useState(false);
   const challenge = challenges.find((c) => c.id === challengeId);
 
   const progressPercentage = uiResponse?.total_steps
@@ -118,6 +128,15 @@ export default function ChallengeNew() {
       createAndStartSession();
     }
   }, []);
+
+  // Handle reset confirmation
+  const handleResetConfirm = () => {
+    resetSession();
+    setShowResetDialog(false);
+    setTextInput('');
+    setOptimisticMessage(null);
+    setSidebarInsight('');
+  };
 
   // Clear optimistic message when backend responds with new messages
   useEffect(() => {
@@ -316,8 +335,8 @@ export default function ChallengeNew() {
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
-      <header className="sticky top-0 z-40 border-b border-border/50 bg-card/70 backdrop-blur-xl flex-shrink-0">
+    <div className="h-screen bg-background flex flex-col overflow-hidden">
+      <header className="border-b border-border/50 bg-card/70 backdrop-blur-xl flex-shrink-0">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-3">
           <Button variant="ghost" size="sm" onClick={() => navigate('/')} className="flex-shrink-0 gap-2">
             <ArrowLeft className="h-4 w-4" />
@@ -420,10 +439,10 @@ export default function ChallengeNew() {
           </div>
         </div>
 
-        <aside className="w-80 border-l border-border/50 bg-card/40 backdrop-blur-sm hidden lg:flex flex-col flex-shrink-0 h-[calc(100vh-72px)] max-h-[calc(100vh-72px)] sticky top-[72px]">
+        <aside className="w-80 border-l border-border/50 bg-card/40 backdrop-blur-sm hidden lg:flex flex-col flex-shrink-0 self-stretch">
           <div className="p-4 border-b border-border/50 space-y-3">
             <div className="flex items-center justify-between gap-3">
-              <div>
+              <div className="flex-1">
                 <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Status</p>
                 <div className="flex items-center gap-2 mt-1">
                   <Badge
@@ -443,6 +462,15 @@ export default function ChallengeNew() {
                   </Badge>
                 </div>
               </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                onClick={() => setShowResetDialog(true)}
+                title="Reset Challenge"
+              >
+                <RotateCcw className="h-4 w-4" />
+              </Button>
             </div>
 
             <div className="space-y-3">
@@ -556,6 +584,27 @@ export default function ChallengeNew() {
           </ScrollArea>
         </aside>
       </div>
+
+      {/* Reset Confirmation Dialog */}
+      <Dialog open={showResetDialog} onOpenChange={setShowResetDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reset Challenge?</DialogTitle>
+            <DialogDescription>
+              This will clear your current progress and start a new session. All messages, scores, and progress will be lost. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowResetDialog(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleResetConfirm}>
+              <RotateCcw className="h-4 w-4 mr-2" />
+              Reset Challenge
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

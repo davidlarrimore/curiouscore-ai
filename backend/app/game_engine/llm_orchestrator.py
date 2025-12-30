@@ -78,9 +78,41 @@ class LLMOrchestrator:
             # For Simple challenges, use the full system prompt directly
             # This allows the teaching prompt with metadata requirements to work
             system_prompt = gm_context
-            user_message = "Welcome the learner and present the first question or task."
+
+            # Build conversation messages with history
+            messages = []
+            conversation_history = context.get("messages", [])
+
+            # Add previous messages (excluding metadata) to maintain context
+            for msg in conversation_history:
+                role = "user" if msg.role == "user" else "assistant"
+                messages.append(LLMMessage(role=role, content=msg.content))
+
+            # Check if this is a response to a user answer or initial greeting
+            user_answer = context.get("user_answer")
+            if user_answer:
+                # Add the user's latest answer
+                messages.append(LLMMessage(
+                    role="user",
+                    content=f"{user_answer}"
+                ))
+            else:
+                # First message - ask LLM to start the challenge
+                if not messages:  # Only if no history exists
+                    messages.append(LLMMessage(
+                        role="user",
+                        content="Begin the challenge. Welcome the learner and present the first question."
+                    ))
+
             max_tokens = 2000
             temperature = 0.7
+
+            # Override model/provider for Simple challenges if not explicitly set
+            # Simple challenges require structured output, so use more capable models
+            if not provider:
+                provider = "anthropic"  # Claude is better at structured outputs
+            if not model:
+                model = "claude-sonnet-4-5-20250929"  # Use Sonnet 4.5 for metadata generation
         else:
             # For Advanced challenges, use traditional GM narration
             system_prompt = """You are the Game Master for an educational challenge.
@@ -97,6 +129,7 @@ Keep narration:
 - Encouraging and supportive
 - Focused on learning, not entertainment"""
             user_message = self._build_gm_message(context)
+            messages = [LLMMessage(role="user", content=user_message)]
             max_tokens = 300
             temperature = 0.7
 
@@ -104,7 +137,7 @@ Keep narration:
         request = LLMChatRequest(
             provider=LLMProvider(provider or self.default_provider),
             model=model or self.default_model,
-            messages=[LLMMessage(role="user", content=user_message)],
+            messages=messages,
             system_prompt=system_prompt,
             temperature=temperature,
             max_tokens=max_tokens

@@ -79,6 +79,12 @@ async def execute_llm_tasks(
                     current_state,
                     steps[task.get("step_index", 0)]
                 )
+                # For Simple challenges, include user_answer and message history
+                if "user_answer" in task:
+                    context["user_answer"] = task["user_answer"]
+                # Include message history for conversational context
+                context["messages"] = current_state.messages
+
                 narration = await orchestrator.narrate_gm(context)
 
                 # Create GM_NARRATED event
@@ -434,6 +440,9 @@ async def start_session(
 
         # Use updated state for UI response
         result.new_state = updated_state
+        # Rebuild UI response to include new messages from LLM tasks
+        current_step = steps[result.new_state.current_step_index]
+        result.ui_response = engine._build_ui_response(result.new_state, current_step)
 
     await db.commit()
     await db.refresh(session)
@@ -519,33 +528,8 @@ async def submit_attempt(
         state=engine_result.new_state
     )
 
-    # If handler doesn't require LEM, scoring is complete (MCQ steps)
-    # The engine already handled scoring, feedback, and advancement in _handle_user_submission
-    if not handler_result.requires_lem:
-        # Update session record with new state
-        session.total_score = engine_result.new_state.total_score
-        session.current_step_index = engine_result.new_state.current_step_index
-        session.status = engine_result.new_state.status
-
-        if engine_result.new_state.status == "completed":
-            session.completed_at = datetime.utcnow()
-
-        await db.commit()
-        await db.refresh(session)
-
-        # Determine current step for UI response
-        if engine_result.new_state.current_step_index < len(steps):
-            current_step_for_ui = steps[engine_result.new_state.current_step_index]
-        else:
-            current_step_for_ui = steps[-1]  # Last step if completed
-
-        return SessionStateResponse(
-            session=session,
-            ui_response=engine._build_ui_response(engine_result.new_state, current_step_for_ui)
-        )
-
-    # Week 3: If requires LEM, execute LLM evaluation
-    if handler_result.requires_lem:
+    # Execute LLM tasks if handler provided them (for both Simple and Advanced challenges)
+    if handler_result.llm_tasks:
         updated_state, llm_events = await execute_llm_tasks(
             tasks=handler_result.llm_tasks,
             state=engine_result.new_state,

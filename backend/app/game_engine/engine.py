@@ -149,10 +149,22 @@ class GameEngine:
 
         new_state = state.model_copy(deep=True)
 
+        # Convert MCQ answer index to option text for display
+        display_content = str(answer)
+        if state.current_ui_mode == "MCQ_SINGLE" and state.current_ui_data:
+            options = state.current_ui_data.get("options", [])
+            try:
+                answer_index = int(answer)
+                if 0 <= answer_index < len(options):
+                    display_content = options[answer_index]
+            except (ValueError, TypeError):
+                # If answer is not an integer, use as-is
+                pass
+
         # Add user message to display
         new_state.add_message(
             role="user",
-            content=str(answer),
+            content=display_content,
             timestamp=event.timestamp.isoformat()
         )
 
@@ -172,8 +184,20 @@ class GameEngine:
         if not handler:
             raise ValueError(f"No handler found for step type: {step.step_type}")
 
+        # For Simple challenges in MCQ mode, pass the option text instead of index
+        # This ensures the LLM receives meaningful text (e.g., "Rights-Impacting ⚖️" instead of "0")
+        handler_answer = answer
+        if step.step_type == "CHAT" and state.current_ui_mode == "MCQ_SINGLE" and state.current_ui_data:
+            options = state.current_ui_data.get("options", [])
+            try:
+                answer_index = int(answer)
+                if 0 <= answer_index < len(options):
+                    handler_answer = options[answer_index]
+            except (ValueError, TypeError):
+                pass
+
         # Process submission through handler
-        result = handler.handle_submission(step, answer, new_state)
+        result = handler.handle_submission(step, handler_answer, new_state)
 
         # If requires LEM (CHAT steps), queue LLM task
         if result.requires_lem:
@@ -333,17 +357,54 @@ class GameEngine:
         """
         Handle GM_NARRATED event.
         Add GM message to display.
+
+        For Simple challenges, parse metadata to switch UI modes.
         """
+        import json
         new_state = state.model_copy(deep=True)
         gm_content = event.data.get("content", "")
 
+        step = self.steps[state.current_step_index]
+
+        # Check if this is a Simple challenge (has metadata in response)
+        metadata = None
+        display_content = gm_content
+
+        if "<metadata>" in gm_content and "</metadata>" in gm_content:
+            # Extract and parse metadata
+            start = gm_content.find("<metadata>")
+            end = gm_content.find("</metadata>")
+            meta_raw = gm_content[start + 10:end]
+            display_content = (gm_content[:start] + gm_content[end + 11:]).strip()
+
+            try:
+                metadata = json.loads(meta_raw)
+
+                # Switch UI mode based on questionType
+                question_type = metadata.get("questionType", "text")
+                if question_type == "mcq":
+                    new_state.current_ui_mode = "MCQ_SINGLE"
+                    # Store options in current_ui_data for the UI
+                    options = metadata.get("options", [])
+                    if options:
+                        new_state.current_ui_data = {"options": options}
+                elif question_type == "text":
+                    new_state.current_ui_mode = "CHAT"
+                    new_state.current_ui_data = None
+                elif question_type == "upload":
+                    new_state.current_ui_mode = "FILE_UPLOAD"
+                    new_state.current_ui_data = None
+
+            except json.JSONDecodeError:
+                # If metadata parsing fails, just use content as-is
+                pass
+
         new_state.add_message(
             role="gm",
-            content=gm_content,
-            timestamp=event.timestamp.isoformat()
+            content=display_content,
+            timestamp=event.timestamp.isoformat(),
+            metadata=metadata
         )
-
-        step = self.steps[state.current_step_index]
 
         return EngineResult(
             new_state=new_state,
@@ -424,7 +485,12 @@ class GameEngine:
 
         # Add mode-specific data
         if state.current_ui_mode in ["MCQ_SINGLE", "MCQ_MULTI"]:
-            ui_data["options"] = current_step.options
+            # For Simple challenges, use dynamic options from current_ui_data
+            # For Advanced challenges, use step.options
+            if state.current_ui_data and "options" in state.current_ui_data:
+                ui_data["options"] = state.current_ui_data["options"]
+            else:
+                ui_data["options"] = current_step.options
         elif state.current_ui_mode == "TRUE_FALSE":
             ui_data["options"] = ["True", "False"]
 

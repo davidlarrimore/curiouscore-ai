@@ -18,7 +18,7 @@ from sqlalchemy.orm import selectinload
 
 from .database import get_session
 from .deps import get_current_user
-from .models import GameSession, ChallengeStep, User
+from .models import GameSession, ChallengeStep, User, Challenge
 from .schemas import (
     SessionCreate,
     SessionOut,
@@ -227,6 +227,85 @@ async def execute_llm_tasks(
     return current_state, derived_events
 
 
+async def load_challenge_steps(
+    challenge_id: str,
+    db: AsyncSession
+) -> tuple[Challenge, list[ChallengeStep]]:
+    """
+    Load challenge and its steps.
+    For simple challenges, create a synthetic step from system_prompt.
+    For advanced challenges, return the configured steps.
+
+    Args:
+        challenge_id: Challenge ID
+        db: Database session
+
+    Returns:
+        (challenge, steps) tuple
+
+    Raises:
+        HTTPException: If challenge not found or has no steps/system_prompt
+    """
+    # Load challenge
+    result = await db.execute(
+        select(Challenge).where(Challenge.id == challenge_id)
+    )
+    challenge = result.scalar_one_or_none()
+
+    if not challenge:
+        raise HTTPException(status_code=404, detail="Challenge not found")
+
+    # Load steps
+    result = await db.execute(
+        select(ChallengeStep)
+        .where(ChallengeStep.challenge_id == challenge_id)
+        .order_by(ChallengeStep.step_index)
+    )
+    steps = list(result.scalars().all())
+
+    # For simple challenges, create synthetic step from system_prompt
+    if challenge.challenge_type == "simple":
+        if not steps:
+            # Inject metadata requirements into the system prompt
+            from .prompt_injection import inject_metadata_requirements
+            enhanced_prompt = inject_metadata_requirements(
+                challenge.system_prompt or "You are a helpful teaching assistant.",
+                challenge.title,
+                challenge.xp_reward,
+                challenge.passing_score
+            )
+
+            # Create a synthetic step with a user-friendly instruction
+            # The actual system prompt will be used by the LLM but not shown to users
+            # Set auto_narrate=True to trigger teaching on entry
+            synthetic_step = ChallengeStep(
+                id=f"synthetic-{challenge_id}",
+                challenge_id=challenge_id,
+                step_index=0,
+                step_type="CHAT",
+                title=challenge.title,
+                instruction=f"Complete the {challenge.title} challenge. Use the chat below to interact with the AI instructor.",
+                points_possible=100,
+                passing_threshold=challenge.passing_score,
+                rubric=None,
+                auto_narrate=True,  # Enable auto-teaching for simple challenges
+                options=None,
+                correct_answer=None,
+                correct_answers=None,
+                gm_context=enhanced_prompt  # Full teaching prompt WITH metadata requirements injected
+            )
+            steps = [synthetic_step]
+    else:
+        # Advanced challenge must have steps configured
+        if not steps:
+            raise HTTPException(
+                status_code=400,
+                detail="Advanced challenge has no steps configured"
+            )
+
+    return challenge, steps
+
+
 @router.post("", response_model=SessionOut, status_code=status.HTTP_201_CREATED)
 async def create_session(
     payload: SessionCreate,
@@ -290,16 +369,8 @@ async def start_session(
     if session.status != "created":
         raise HTTPException(status_code=400, detail="Session already started")
 
-    # Load challenge steps
-    result = await db.execute(
-        select(ChallengeStep)
-        .where(ChallengeStep.challenge_id == session.challenge_id)
-        .order_by(ChallengeStep.step_index)
-    )
-    steps = list(result.scalars().all())
-
-    if not steps:
-        raise HTTPException(status_code=400, detail="Challenge has no steps")
+    # Load challenge and steps (handles simple vs advanced)
+    challenge, steps = await load_challenge_steps(session.challenge_id, db)
 
     # Create engine
     engine = GameEngine(steps)
@@ -399,13 +470,8 @@ async def submit_attempt(
     if session.status != "active":
         raise HTTPException(status_code=400, detail="Session not active")
 
-    # Load challenge steps
-    result = await db.execute(
-        select(ChallengeStep)
-        .where(ChallengeStep.challenge_id == session.challenge_id)
-        .order_by(ChallengeStep.step_index)
-    )
-    steps = list(result.scalars().all())
+    # Load challenge and steps (handles simple vs advanced)
+    challenge, steps = await load_challenge_steps(session.challenge_id, db)
 
     # Create engine
     engine = GameEngine(steps)
@@ -553,13 +619,8 @@ async def get_session_state(
     if session.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    # Load challenge steps
-    result = await db.execute(
-        select(ChallengeStep)
-        .where(ChallengeStep.challenge_id == session.challenge_id)
-        .order_by(ChallengeStep.step_index)
-    )
-    steps = list(result.scalars().all())
+    # Load challenge and steps (handles simple vs advanced)
+    challenge, steps = await load_challenge_steps(session.challenge_id, db)
 
     # Create engine
     engine = GameEngine(steps)
@@ -614,13 +675,8 @@ async def submit_action(
     if session.status != "active":
         raise HTTPException(status_code=400, detail="Session not active")
 
-    # Load challenge steps
-    result = await db.execute(
-        select(ChallengeStep)
-        .where(ChallengeStep.challenge_id == session.challenge_id)
-        .order_by(ChallengeStep.step_index)
-    )
-    steps = list(result.scalars().all())
+    # Load challenge and steps (handles simple vs advanced)
+    challenge, steps = await load_challenge_steps(session.challenge_id, db)
 
     # Create engine
     engine = GameEngine(steps)

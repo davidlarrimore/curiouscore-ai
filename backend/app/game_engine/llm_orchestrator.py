@@ -45,7 +45,7 @@ class LLMOrchestrator:
     def __init__(self):
         """Initialize orchestrator with default provider/model from settings."""
         self.default_provider = settings.default_llm_provider or "anthropic"
-        self.default_model = settings.default_llm_model or "claude-3-5-sonnet-20241022"
+        self.default_model = settings.default_llm_model or "claude-sonnet-4-5-20250929"
 
     async def narrate_gm(
         self,
@@ -56,16 +56,34 @@ class LLMOrchestrator:
         """
         Generate GM narration for a step.
 
+        For Simple challenges (when gm_context contains full system prompt),
+        uses that prompt directly for teaching. For Advanced challenges,
+        generates short encouraging narration.
+
         Args:
             context: Context dict with step info, state summary, etc.
             provider: LLM provider (defaults to config)
             model: Model name (defaults to config)
 
         Returns:
-            Narration text from GM
+            Narration text from GM or teaching response
         """
-        # Build system prompt
-        system_prompt = """You are the Game Master for an educational challenge.
+        gm_context = context.get("gm_context", "")
+
+        # Check if this is a Simple challenge (has full system prompt in gm_context)
+        # Simple challenges have metadata injection instructions
+        is_simple_challenge = "<metadata>" in gm_context and len(gm_context) > 1000
+
+        if is_simple_challenge:
+            # For Simple challenges, use the full system prompt directly
+            # This allows the teaching prompt with metadata requirements to work
+            system_prompt = gm_context
+            user_message = "Welcome the learner and present the first question or task."
+            max_tokens = 2000
+            temperature = 0.7
+        else:
+            # For Advanced challenges, use traditional GM narration
+            system_prompt = """You are the Game Master for an educational challenge.
 
 Your role:
 - Narrate the learning journey with encouragement and guidance
@@ -78,9 +96,9 @@ Keep narration:
 - Concise (2-3 sentences)
 - Encouraging and supportive
 - Focused on learning, not entertainment"""
-
-        # Build user message from context
-        user_message = self._build_gm_message(context)
+            user_message = self._build_gm_message(context)
+            max_tokens = 300
+            temperature = 0.7
 
         # Make LLM call
         request = LLMChatRequest(
@@ -88,8 +106,8 @@ Keep narration:
             model=model or self.default_model,
             messages=[LLMMessage(role="user", content=user_message)],
             system_prompt=system_prompt,
-            temperature=0.7,  # Creative
-            max_tokens=300
+            temperature=temperature,
+            max_tokens=max_tokens
         )
 
         content = await llm_router.chat(request)

@@ -66,9 +66,17 @@ class Challenge(Base):
     passing_score: Mapped[int] = mapped_column(Integer, default=70)
     help_resources: Mapped[list] = mapped_column(JSON, nullable=True, default=list)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    # Challenge type: "simple" (prompt-driven) or "advanced" (step-based)
+    challenge_type: Mapped[str] = mapped_column(String, default="simple")
+
+    # Custom variables for prompt substitution (e.g., {"course_name": "Python 101"})
+    custom_variables: Mapped[dict] = mapped_column(JSON, nullable=True, default=dict)
+
     created_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
+    # Legacy relationships
     progress = relationship("UserProgress", back_populates="challenge", cascade="all, delete-orphan")
     llm_config = relationship(
         "ChallengeModel",
@@ -77,6 +85,13 @@ class Challenge(Base):
         uselist=False,
         lazy="selectin",
     )
+
+    # Game Master architecture relationships
+    steps = relationship("ChallengeStep", back_populates="challenge", cascade="all, delete-orphan", order_by="ChallengeStep.step_index")
+    personas = relationship("Persona", back_populates="challenge", cascade="all, delete-orphan")
+    scenes = relationship("Scene", back_populates="challenge", cascade="all, delete-orphan", order_by="Scene.scene_index")
+    media_assets = relationship("MediaAsset", back_populates="challenge", cascade="all, delete-orphan")
+    knowledge_base = relationship("KnowledgeBase", back_populates="challenge", cascade="all, delete-orphan")
 
 
 class UserProgress(Base):
@@ -217,7 +232,7 @@ class ChallengeStep(Base):
     created_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # Relationship
-    challenge = relationship("Challenge")
+    challenge = relationship("Challenge", back_populates="steps")
 
 
 class SessionSnapshot(Base):
@@ -247,3 +262,125 @@ class SessionSnapshot(Base):
 
     # Relationship
     session = relationship("GameSession", back_populates="snapshots")
+
+
+# ============================================================================
+# Game Master Content Models (Personas, Scenes, Media, Knowledge Base)
+# ============================================================================
+
+
+class Persona(Base):
+    """
+    Character/persona that can interact with learners.
+    Can be global (reusable across challenges) or challenge-specific.
+    """
+    __tablename__ = "personas"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    challenge_id: Mapped[str] = mapped_column(String, ForeignKey("challenges.id", ondelete="CASCADE"), nullable=True, index=True)
+
+    # Identity
+    name: Mapped[str] = mapped_column(String)
+    role: Mapped[str] = mapped_column(String)  # e.g., "Senior Developer", "Product Manager"
+    temperament: Mapped[str] = mapped_column(String)  # e.g., "friendly and patient", "direct and technical"
+
+    # Behavioral constraints
+    communication_style: Mapped[str] = mapped_column(Text)  # Tone constraints
+    knowledge_scope: Mapped[str] = mapped_column(Text)  # What they know/don't know
+    facts: Mapped[dict] = mapped_column(JSON, default=dict)  # Grounded profile fields
+
+    # Presentation
+    avatar_url: Mapped[str] = mapped_column(String, nullable=True)
+
+    # Timestamps
+    created_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    # Relationship
+    challenge = relationship("Challenge", back_populates="personas")
+
+
+class Scene(Base):
+    """
+    Scene configuration for narrative delivery.
+    Defines background media, audio, theme, and active speakers for a challenge.
+    """
+    __tablename__ = "scenes"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    challenge_id: Mapped[str] = mapped_column(String, ForeignKey("challenges.id", ondelete="CASCADE"), index=True)
+    scene_index: Mapped[int] = mapped_column(Integer)  # Order within challenge
+
+    # Scene configuration
+    title: Mapped[str] = mapped_column(String)
+    description: Mapped[str] = mapped_column(Text)
+
+    # Media
+    background_media_url: Mapped[str] = mapped_column(String, nullable=True)  # Image/video background
+    ambient_audio_url: Mapped[str] = mapped_column(String, nullable=True)
+
+    # UI theming
+    theme_accents: Mapped[dict] = mapped_column(JSON, nullable=True)  # UI theme overrides
+
+    # Active speakers
+    active_speakers: Mapped[list] = mapped_column(JSON, default=list)  # ["GM", "PERSONA:<id>", ...]
+
+    # Timestamp
+    created_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationship
+    challenge = relationship("Challenge", back_populates="scenes")
+
+
+class MediaAsset(Base):
+    """
+    Media files (images, videos, audio, documents).
+    Can be global (reusable) or challenge-specific.
+    """
+    __tablename__ = "media_assets"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    challenge_id: Mapped[str] = mapped_column(String, ForeignKey("challenges.id", ondelete="CASCADE"), nullable=True, index=True)
+    uploaded_by: Mapped[str] = mapped_column(String, ForeignKey("users.id", ondelete="CASCADE"), index=True)
+
+    # Asset metadata
+    asset_type: Mapped[str] = mapped_column(String)  # "image", "video", "audio", "document"
+    filename: Mapped[str] = mapped_column(String)
+    file_url: Mapped[str] = mapped_column(String)  # S3/CDN URL or local path
+    file_size: Mapped[int] = mapped_column(Integer)  # bytes
+    mime_type: Mapped[str] = mapped_column(String)
+
+    # Timestamp
+    created_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationships
+    challenge = relationship("Challenge", back_populates="media_assets")
+    user = relationship("User")
+
+
+class KnowledgeBase(Base):
+    """
+    Teaching materials and references.
+    Can be global (reusable) or challenge-specific.
+    """
+    __tablename__ = "knowledge_base"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    challenge_id: Mapped[str] = mapped_column(String, ForeignKey("challenges.id", ondelete="CASCADE"), nullable=True, index=True)
+
+    # Content
+    title: Mapped[str] = mapped_column(String)
+    content: Mapped[str] = mapped_column(Text)  # Markdown content
+    content_type: Mapped[str] = mapped_column(String)  # "text", "code_example", "diagram", "external_link"
+    tags: Mapped[list] = mapped_column(JSON, default=list)
+    external_url: Mapped[str] = mapped_column(String, nullable=True)
+
+    # Future: Vector search
+    embedding_vector: Mapped[str] = mapped_column(String, nullable=True)
+
+    # Timestamps
+    created_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    # Relationship
+    challenge = relationship("Challenge", back_populates="knowledge_base")

@@ -7,7 +7,7 @@ import { ThemeProvider } from "next-themes";
 import { AuthProvider } from "@/hooks/useAuth";
 import Dashboard from "./pages/Dashboard";
 import Auth from "./pages/Auth";
-import ChallengeNew from "./pages/ChallengeNew";
+import Challenge from "./pages/ChallengeNew";
 import Profile from "./pages/Profile";
 import Admin from "./pages/Admin";
 import NotFound from "./pages/NotFound";
@@ -30,7 +30,7 @@ const App = () => (
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/auth" element={<Auth />} />
-              <Route path="/challenge/:id" element={<ChallengeNew />} />
+              <Route path="/challenge/:id" element={<Challenge />} />
               <Route path="/profile" element={<Profile />} />
               <Route path="/admin" element={<Admin />} />
               <Route path="*" element={<NotFound />} />

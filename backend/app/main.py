@@ -26,16 +26,13 @@ from .schemas import (
     LLMModelOut,
     LLMCompletionRequest,
     LLMChatRequest,
-    ChallengeModelOut,
-    ChallengeModelUpdate,
-    ChallengeActivationUpdate,
-    ChallengePromptUpdate,
 )
 from .auth import get_password_hash, verify_password, create_access_token
 from .deps import get_current_user, require_admin
 from .llm_router import llm_router
 from .schemas import ChatMessage
 from .session_endpoints import router as session_router
+from .admin_routes import router as admin_router
 
 
 app = FastAPI(title="CuriousCore API")
@@ -50,6 +47,9 @@ app.add_middleware(
 
 # Include session router for Game Master architecture
 app.include_router(session_router)
+
+# Include admin router for admin panel management
+app.include_router(admin_router)
 
 
 @app.on_event("startup")
@@ -309,88 +309,53 @@ async def llm_chat(payload: LLMChatRequest, _: User = Depends(require_admin)):
     return {"content": content}
 
 
-@app.get("/admin/challenges/models", response_model=List[ChallengeModelOut])
-async def get_challenge_models(_: User = Depends(require_admin), db: AsyncSession = Depends(get_session)):
-    result = await db.execute(select(ChallengeModel))
-    return result.scalars().all()
+# NOTE: Old admin endpoints moved to admin_routes.py
+# These are commented out to avoid conflicts with the new unified admin API
+
+# @app.get("/admin/challenges", response_model=List[ChallengeOut])
+# async def list_all_challenges(_: User = Depends(require_admin), db: AsyncSession = Depends(get_session)):
+#     result = await db.execute(select(Challenge).options(selectinload(Challenge.llm_config)))
+#     return result.scalars().all()
 
 
-@app.put("/admin/challenges/{challenge_id}/model", response_model=ChallengeModelOut)
-async def set_challenge_model(
-    challenge_id: str,
-    payload: ChallengeModelUpdate,
-    _: User = Depends(require_admin),
-    db: AsyncSession = Depends(get_session),
-):
-    challenge_result = await db.execute(
-        select(Challenge).options(selectinload(Challenge.llm_config)).where(Challenge.id == challenge_id)
-    )
-    challenge = challenge_result.scalars().first()
-    if not challenge:
-        raise HTTPException(status_code=404, detail="Challenge not found")
-
-    existing_result = await db.execute(select(ChallengeModel).where(ChallengeModel.challenge_id == challenge_id))
-    existing = existing_result.scalars().first()
-
-    if existing:
-        existing.provider = payload.provider
-        existing.model = payload.model
-        db.add(existing)
-        await db.commit()
-        await db.refresh(existing)
-        return existing
-
-    new_mapping = ChallengeModel(challenge_id=challenge_id, provider=payload.provider, model=payload.model)
-    db.add(new_mapping)
-    await db.commit()
-    await db.refresh(new_mapping)
-    return new_mapping
+# @app.patch("/admin/challenges/{challenge_id}/activation", response_model=ChallengeOut)
+# async def update_challenge_activation(
+#     challenge_id: str,
+#     payload: ChallengeActivationUpdate,
+#     _: User = Depends(require_admin),
+#     db: AsyncSession = Depends(get_session),
+# ):
+#     result = await db.execute(
+#         select(Challenge).options(selectinload(Challenge.llm_config)).where(Challenge.id == challenge_id)
+#     )
+#     challenge = result.scalars().first()
+#     if not challenge:
+#         raise HTTPException(status_code=404, detail="Challenge not found")
+#     challenge.is_active = payload.is_active
+#     db.add(challenge)
+#     await db.commit()
+#     await db.refresh(challenge)
+#     return challenge
 
 
-@app.get("/admin/challenges", response_model=List[ChallengeOut])
-async def list_all_challenges(_: User = Depends(require_admin), db: AsyncSession = Depends(get_session)):
-    result = await db.execute(select(Challenge).options(selectinload(Challenge.llm_config)))
-    return result.scalars().all()
-
-
-@app.patch("/admin/challenges/{challenge_id}/activation", response_model=ChallengeOut)
-async def update_challenge_activation(
-    challenge_id: str,
-    payload: ChallengeActivationUpdate,
-    _: User = Depends(require_admin),
-    db: AsyncSession = Depends(get_session),
-):
-    result = await db.execute(
-        select(Challenge).options(selectinload(Challenge.llm_config)).where(Challenge.id == challenge_id)
-    )
-    challenge = result.scalars().first()
-    if not challenge:
-        raise HTTPException(status_code=404, detail="Challenge not found")
-    challenge.is_active = payload.is_active
-    db.add(challenge)
-    await db.commit()
-    await db.refresh(challenge)
-    return challenge
-
-
-@app.patch("/admin/challenges/{challenge_id}/prompt", response_model=ChallengeOut)
-async def update_challenge_prompt(
-    challenge_id: str,
-    payload: ChallengePromptUpdate,
-    _: User = Depends(require_admin),
-    db: AsyncSession = Depends(get_session),
-):
-    result = await db.execute(
-        select(Challenge).options(selectinload(Challenge.llm_config)).where(Challenge.id == challenge_id)
-    )
-    challenge = result.scalars().first()
-    if not challenge:
-        raise HTTPException(status_code=404, detail="Challenge not found")
-    challenge.system_prompt = payload.system_prompt
-    db.add(challenge)
-    await db.commit()
-    await db.refresh(challenge)
-    return challenge
+# @app.patch("/admin/challenges/{challenge_id}/prompt", response_model=ChallengeOut)
+# async def update_challenge_prompt(
+#     challenge_id: str,
+#     payload: ChallengePromptUpdate,
+#     _: User = Depends(require_admin),
+#     db: AsyncSession = Depends(get_session),
+# ):
+#     result = await db.execute(
+#         select(Challenge).options(selectinload(Challenge.llm_config)).where(Challenge.id == challenge_id)
+#     )
+#     challenge = result.scalars().first()
+#     if not challenge:
+#         raise HTTPException(status_code=404, detail="Challenge not found")
+#     challenge.system_prompt = payload.system_prompt
+#     db.add(challenge)
+#     await db.commit()
+#     await db.refresh(challenge)
+#     return challenge
 
 
 @app.post("/chat", response_model=ChatResponse)
@@ -405,6 +370,13 @@ async def chat(payload: ChatRequest, current_user: User = Depends(get_current_us
     if not challenge:
         raise HTTPException(status_code=404, detail="Challenge not found")
 
+    # Block advanced challenges from using /chat endpoint
+    if hasattr(challenge, 'challenge_type') and challenge.challenge_type == "advanced":
+        raise HTTPException(
+            status_code=400,
+            detail="This is an Advanced challenge. Please use the /sessions API instead."
+        )
+
     mapping_result = await db.execute(select(ChallengeModel).where(ChallengeModel.challenge_id == payload.challengeId))
     mapping = mapping_result.scalars().first()
 
@@ -414,12 +386,40 @@ async def chat(payload: ChatRequest, current_user: User = Depends(get_current_us
     if not provider or not model:
         raise HTTPException(status_code=400, detail="No model configured for this challenge")
 
+    # For Simple challenges, apply variable substitution and metadata injection
+    system_prompt = payload.systemPrompt or challenge.system_prompt
+
+    if hasattr(challenge, 'challenge_type') and challenge.challenge_type == "simple":
+        from .variable_engine import substitute_variables
+        from .prompt_injection import inject_metadata_requirements
+
+        try:
+            # Apply variable substitution
+            system_prompt = substitute_variables(
+                system_prompt,
+                challenge,
+                challenge.custom_variables if hasattr(challenge, 'custom_variables') else None
+            )
+
+            # Inject metadata requirements
+            system_prompt = inject_metadata_requirements(
+                system_prompt,
+                challenge.title,
+                challenge.xp_reward,
+                challenge.passing_score
+            )
+        except ValueError as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Variable substitution error: {str(e)}"
+            )
+
     messages_payload = [{"role": m.role, "content": m.content} for m in payload.messages]
     chat_request = LLMChatRequest(
         provider=provider,
         model=model,
         messages=messages_payload,
-        system_prompt=payload.systemPrompt or challenge.system_prompt,
+        system_prompt=system_prompt,
     )
 
     content = await llm_router.chat(chat_request)

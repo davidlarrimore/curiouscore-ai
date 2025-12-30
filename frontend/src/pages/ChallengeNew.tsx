@@ -333,32 +333,17 @@ export default function ChallengeNew() {
             <p className="text-xs text-muted-foreground truncate">{challenge?.description || uiResponse.step_instruction}</p>
           </div>
 
-          <div className="hidden md:flex items-center gap-2 ml-4">
-            <Button variant="ghost" size="sm" onClick={() => navigate('/')} className="gap-2">
+          <div className="ml-auto flex items-center gap-2 flex-shrink-0">
+            <Button variant="ghost" size="icon" onClick={() => navigate('/')} title="Dashboard">
               <LayoutDashboard className="h-4 w-4" />
-              Dashboard
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => navigate('/profile')} className="gap-2">
-              <User className="h-4 w-4" />
-              Profile
             </Button>
             {isAdmin && (
-              <Button variant="ghost" size="sm" onClick={() => navigate('/admin')} className="gap-2">
+              <Button variant="ghost" size="icon" onClick={() => navigate('/admin')} title="Admin">
                 <Shield className="h-4 w-4" />
-                Admin
               </Button>
             )}
-          </div>
-
-          <div className="ml-auto flex items-center gap-3 flex-shrink-0">
-            <Badge variant="outline" className="text-xs">
-              Step {uiResponse.step_index + 1}/{uiResponse.total_steps}
-            </Badge>
-            <div className="text-xs text-muted-foreground">
-              Score: <span className="font-semibold text-foreground">{uiResponse.score}/{uiResponse.max_score}</span>
-            </div>
             <ThemeToggle />
-            <Button variant="ghost" size="icon" onClick={signOut} className="hidden sm:inline-flex">
+            <Button variant="ghost" size="icon" onClick={signOut} title="Sign out">
               <LogOut className="h-4 w-4" />
             </Button>
           </div>

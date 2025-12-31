@@ -255,24 +255,49 @@ class GameEngine:
     def _handle_user_continued(self, state: SessionState, event: Event) -> EngineResult:
         """
         Handle USER_CONTINUED event (for CONTINUE_GATE steps).
-        Advance to next step.
-        """
-        # Week 1: Stub
-        # Week 4: Full implementation with gate handler
-        new_state = state.model_copy(deep=True)
 
-        # Advance to next step
+        For Advanced challenges: Advance to next step.
+        For Simple challenges: Trigger GM narration to show next phase.
+        """
+        new_state = state.model_copy(deep=True)
+        step = self.steps[state.current_step_index]
+
+        # Check if we can advance to next step (Advanced challenges)
         if state.current_step_index < self.total_steps - 1:
+            # Advanced challenge - advance to next step
             new_state.current_step_index += 1
             next_step = self.steps[new_state.current_step_index]
             new_state.current_ui_mode = next_step.step_type
 
-        return EngineResult(
-            new_state=new_state,
-            derived_events=[],
-            llm_tasks=[],
-            ui_response=self._build_ui_response(new_state, self.steps[new_state.current_step_index])
-        )
+            return EngineResult(
+                new_state=new_state,
+                derived_events=[],
+                llm_tasks=[],
+                ui_response=self._build_ui_response(new_state, self.steps[new_state.current_step_index])
+            )
+        else:
+            # Simple challenge (only one step) or last step
+            # Add user's continue action as a message
+            new_state.add_message(
+                role="user",
+                content="[Continue]",
+                timestamp=event.timestamp.isoformat()
+            )
+
+            # Trigger GM narration to show next phase
+            llm_tasks = [{
+                "task_type": "GM_NARRATE",
+                "step_index": state.current_step_index,
+                "context": self._build_gm_context(new_state, step),
+                "user_answer": "Continue"
+            }]
+
+            return EngineResult(
+                new_state=new_state,
+                derived_events=[],
+                llm_tasks=llm_tasks,
+                ui_response=self._build_ui_response(new_state, step)
+            )
 
     def _handle_hint_request(self, state: SessionState, event: Event) -> EngineResult:
         """
@@ -419,18 +444,57 @@ class GameEngine:
                     ui_data["activated_triggers"] = metadata["activatedTriggers"]
 
                 if question_type == "mcq":
-                    new_state.current_ui_mode = "MCQ_SINGLE"
                     # Store options in current_ui_data for the UI
                     options = metadata.get("options", [])
-                    if options:
+                    if options and len(options) >= 2:
+                        # Valid MCQ with options
+                        new_state.current_ui_mode = "MCQ_SINGLE"
                         ui_data["options"] = options
+                    else:
+                        # CRITICAL ERROR: LLM specified MCQ mode but didn't provide valid options
+                        # This is a metadata compliance issue - fallback to CHAT mode
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.error(
+                            f"LLM METADATA COMPLIANCE ERROR: questionType='mcq' but options are "
+                            f"{'empty' if not options else f'too few ({len(options)})'}"
+                            f"\nFull metadata: {metadata}"
+                            f"\nFalling back to CHAT mode."
+                        )
+                        print(f"\n{'='*80}")
+                        print(f"⚠️  METADATA COMPLIANCE ERROR")
+                        print(f"{'='*80}")
+                        print(f"LLM returned questionType='mcq' but failed to provide valid options!")
+                        print(f"Options received: {options}")
+                        print(f"Full metadata: {metadata}")
+                        print(f"This indicates the LLM is not following metadata instructions.")
+                        print(f"Falling back to CHAT mode to allow user to continue.")
+                        print(f"{'='*80}\n")
+                        new_state.current_ui_mode = "CHAT"
                 elif question_type == "text":
                     new_state.current_ui_mode = "CHAT"
+                elif question_type == "continue":
+                    new_state.current_ui_mode = "CONTINUE_GATE"
                 elif question_type == "upload":
                     new_state.current_ui_mode = "FILE_UPLOAD"
 
                 # Set current_ui_data with all collected fields
-                new_state.current_ui_data = ui_data if ui_data else None
+                # Always set ui_data even if empty, to clear old state
+                new_state.current_ui_data = ui_data
+
+                # Process score changes (Simple challenges)
+                score_change = metadata.get("scoreChange", 0)
+                if score_change and score_change > 0:
+                    # Add score to total
+                    new_state.total_score += score_change
+                    # Update max possible score if needed
+                    if new_state.max_possible_score < new_state.total_score:
+                        new_state.max_possible_score = new_state.total_score
+
+                # Check for completion signal (Simple challenges)
+                if metadata.get("isComplete") is True:
+                    new_state.status = "completed"
+                    new_state.current_ui_mode = "COMPLETED"
 
             except json.JSONDecodeError:
                 # If metadata parsing fails, just use content as-is

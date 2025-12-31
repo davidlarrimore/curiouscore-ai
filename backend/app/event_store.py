@@ -157,11 +157,15 @@ async def hydrate_state(
         since_sequence = snapshot_sequence
     else:
         # No snapshot - start with initial state
+        # Calculate max possible score from all steps
+        max_score = sum(step.points_possible for step in engine.steps) if engine.steps else 100
+
         state = SessionState(
             session_id=session_id,
             challenge_id=challenge_id,
             user_id=user_id,
-            status="created"
+            status="created",
+            max_possible_score=max_score
         )
         since_sequence = -1
 

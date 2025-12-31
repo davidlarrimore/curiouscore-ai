@@ -74,6 +74,7 @@ async def seed_git_challenge():
             description="Learn version control fundamentals with Git. Understand commits, write great commit messages, work with branches, and follow professional workflows.",
             tags=["intermediate", "git", "version-control", "collaboration"],
             difficulty="intermediate",
+            challenge_type="advanced",  # Multi-step challenge with CONTINUE_GATE, MCQ, CHAT steps
             system_prompt="Teaching Git version control fundamentals for professional development",
             estimated_time_minutes=25,
             xp_reward=150,

@@ -14,6 +14,7 @@ export interface Challenge {
   passing_score: number;
   help_resources: HelpResource[];
   is_active: boolean;
+  challenge_type: "simple" | "advanced";
   created_at: string;
 }
 

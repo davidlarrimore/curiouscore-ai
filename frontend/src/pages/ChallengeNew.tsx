@@ -33,6 +33,7 @@ import {
 import { Loader2, Send, ArrowLeft, Sparkles, Lightbulb, ArrowRight, LayoutDashboard, User, Shield, LogOut, Bot, Info, RefreshCw, BookOpen, RotateCcw } from 'lucide-react';
 import { api } from '@/lib/api';
 import ReactMarkdown from 'react-markdown';
+import { ChallengeLoadingProgress } from '@/components/ChallengeLoadingProgress';
 
 export default function ChallengeNew() {
   const { id: challengeId } = useParams<{ id: string }>();
@@ -188,16 +189,14 @@ export default function ChallengeNew() {
   if (!user) return <Navigate to="/auth" replace />;
   if (!challengeId) return <Navigate to="/" replace />;
 
-  // Show loading during session creation
+  // Show detailed loading progress during session creation
   if (isCreating || isStarting || !uiResponse) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-background">
-        <div className="w-16 h-16 rounded-2xl gradient-primary flex items-center justify-center mb-4 animate-float">
-          <Sparkles className="h-8 w-8 text-primary-foreground" />
-        </div>
-        <h2 className="text-xl font-bold mb-2">Preparing Challenge...</h2>
-        <Loader2 className="h-6 w-6 animate-spin text-primary mt-2" />
-      </div>
+      <ChallengeLoadingProgress
+        isCreating={isCreating}
+        isStarting={isStarting}
+        hasResponse={!!uiResponse}
+      />
     );
   }
 
@@ -393,7 +392,10 @@ export default function ChallengeNew() {
 
           <ScrollArea className="flex-1">
             <div className="max-w-5xl mx-auto px-6 py-6 space-y-4">
-              {!(uiResponse.ui_mode === 'CONTINUE_GATE' && uiResponse.messages.length > 0) && (
+              {!(
+                (uiResponse.ui_mode === 'CONTINUE_GATE' && uiResponse.messages.length > 0) ||
+                (challenge?.challenge_type === 'simple' && uiResponse.messages.length > 0)
+              ) && (
                 <Card className="p-6 bg-accent/20 border-accent/40">
                   <h2 className="font-semibold mb-2">Step Instructions</h2>
                   <p className="text-sm text-muted-foreground">

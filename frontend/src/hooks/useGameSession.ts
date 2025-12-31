@@ -84,7 +84,9 @@ export function useGameSession(challengeId: string) {
   // Start session
   const startSessionMutation = useMutation({
     mutationFn: async (sessionId: string) => {
-      const response = await api.post(`/sessions/${sessionId}/start`);
+      // Execute narration for now to maintain existing UX
+      // In future, can defer narration for faster initial load
+      const response = await api.post(`/sessions/${sessionId}/start?execute_narration=true`);
       return response as SessionStateResponse;
     },
     onSuccess: (data) => {

@@ -74,6 +74,7 @@ async def seed_api_challenge():
             description="Master RESTful API design. Learn industry best practices for building clean, consistent, and scalable APIs that developers love to use.",
             tags=["advanced", "api", "rest", "backend", "architecture"],
             difficulty="advanced",
+            challenge_type="advanced",  # Multi-step challenge with CONTINUE_GATE, MCQ, CHAT steps
             system_prompt="Teaching professional API design principles and RESTful architecture",
             estimated_time_minutes=30,
             xp_reward=200,

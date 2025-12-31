@@ -81,6 +81,7 @@ async def seed_week4_challenge():
             description="Test challenge with CONTINUE_GATE steps and hint functionality",
             tags=["test", "week4", "gates", "hints"],
             difficulty="beginner",
+            challenge_type="advanced",  # Multi-step challenge with CONTINUE_GATE, CHAT, MCQ_SINGLE
             system_prompt="Narrative-driven challenge for testing continue gates and hints",
             estimated_time_minutes=15,
             xp_reward=75,

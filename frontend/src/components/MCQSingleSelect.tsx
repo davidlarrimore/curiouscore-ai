@@ -5,7 +5,7 @@
  * Used for MCQ_SINGLE step type in Game Master architecture.
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
@@ -27,6 +27,11 @@ export function MCQSingleSelect({
 }: MCQSingleSelectProps) {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const isDisabled = disabled || isSubmitting;
+
+  // Reset selection when options change (new question)
+  useEffect(() => {
+    setSelectedIndex(null);
+  }, [options]);
 
   const handleSubmit = () => {
     if (selectedIndex !== null) {

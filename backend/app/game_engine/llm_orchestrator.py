@@ -91,10 +91,16 @@ class LLMOrchestrator:
             # Check if this is a response to a user answer or initial greeting
             user_answer = context.get("user_answer")
             if user_answer:
-                # Add the user's latest answer
+                # Add the user's latest answer with metadata reminder
+                # This reinforces the metadata requirements on every turn
+                metadata_reminder = (
+                    "\n\n[SYSTEM REMINDER: Your response MUST include <metadata></metadata> tags "
+                    "with valid JSON. If this is an MCQ question, the 'options' array is REQUIRED "
+                    "and must contain fresh, unique choices. Double-check your metadata before responding.]"
+                )
                 messages.append(LLMMessage(
                     role="user",
-                    content=f"{user_answer}"
+                    content=f"{user_answer}{metadata_reminder}"
                 ))
             else:
                 # First message - ask LLM to start the challenge

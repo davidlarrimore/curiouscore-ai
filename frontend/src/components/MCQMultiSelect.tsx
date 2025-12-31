@@ -5,7 +5,7 @@
  * Used for MCQ_MULTI step type in Game Master architecture.
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
@@ -27,6 +27,11 @@ export function MCQMultiSelect({
 }: MCQMultiSelectProps) {
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
   const isDisabled = disabled || isSubmitting;
+
+  // Reset selection when options change (new question)
+  useEffect(() => {
+    setSelectedIndices(new Set());
+  }, [options]);
 
   const toggleOption = (index: number) => {
     if (isDisabled) return;

@@ -48,7 +48,7 @@ You MUST include metadata in EVERY response using this EXACT format:
 
 <metadata>
 {{
-  "questionType": "text" | "mcq" | "upload",
+  "questionType": "text" | "mcq" | "continue" | "upload",
   "options": ["Option 1", "Option 2", "Option 3"],
   "correctAnswer": 0,
   {progress_instructions["example_fields"]}
@@ -64,11 +64,14 @@ Metadata Field Definitions:
 - "questionType": Type of interaction
   * "text" = Free-text response
   * "mcq" = Multiple choice question
+  * "continue" = Confirmation gate (shows "Continue" button, used for phase transitions)
   * "upload" = File upload request
 
 - "options": Array of answer choices (REQUIRED for mcq, omit for text/upload)
   * Provide 3-5 clear, distinct options
   * Options should be specific, not vague
+  * CRITICAL: Generate FRESH options for EACH question - never reuse options from previous questions
+  * Each question must have options that are specific to that question's content
 
 - "correctAnswer": Zero-based index of correct option (REQUIRED for mcq, omit for text/upload)
   * 0 = first option, 1 = second option, etc.
@@ -89,9 +92,10 @@ Metadata Field Definitions:
   * Use Socratic hints that guide without giving away the answer
 
 - "isComplete": Challenge completion flag (boolean)
-  * Set to true ONLY when challenge is completely finished
+  * CRITICAL: Set to true ONLY when challenge is completely finished AND learner has passed
   * Learner must have scored at least {passing_score}% to pass
-  * Keep false for all other messages
+  * Keep false for all other messages, even congratulatory ones
+  * When you set isComplete: true, the system will mark the session as complete and award XP
 
 {progress_instructions["tracking_rules"]}
 
@@ -166,7 +170,9 @@ Progress Tracking Rules (QUESTIONS Mode):
 3. Only increment questionNumber when isQuestionComplete=true
 4. progressPercent should equal (questionNumber / {total_questions}) * 100
 5. Award approximately {points_per_question} XP per question (can vary based on difficulty)
-6. Set isComplete=true only when questionNumber={total_questions} AND isQuestionComplete=true
+6. CRITICAL: Set isComplete=true ONLY in the response after answering Question {total_questions} correctly
+   - Check: questionNumber={total_questions} AND isQuestionComplete=true
+   - This signals the system to mark the challenge as complete and award XP
 7. You can ask follow-up questions or provide hints without advancing questionNumber
 """,
         "example_metadata": f"""{{

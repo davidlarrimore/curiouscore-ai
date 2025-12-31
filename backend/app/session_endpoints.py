@@ -290,6 +290,7 @@ async def load_challenge_steps(
             # Create a synthetic step with a user-friendly instruction
             # The actual system prompt will be used by the LLM but not shown to users
             # Set auto_narrate=True to trigger teaching on entry
+            # For Simple challenges, points_possible should match xp_reward since scoring is metadata-driven
             synthetic_step = ChallengeStep(
                 id=f"synthetic-{challenge_id}",
                 challenge_id=challenge_id,
@@ -297,7 +298,7 @@ async def load_challenge_steps(
                 step_type="CHAT",
                 title=challenge.title,
                 instruction=f"Complete the {challenge.title} challenge. Use the chat below to interact with the AI instructor.",
-                points_possible=100,
+                points_possible=challenge.xp_reward,  # Use XP reward as max score for metadata-driven scoring
                 passing_threshold=challenge.passing_score,
                 rubric=None,
                 auto_narrate=True,  # Enable auto-teaching for simple challenges
@@ -359,12 +360,17 @@ async def create_session(
 @router.post("/{session_id}/start", response_model=SessionStateResponse)
 async def start_session(
     session_id: str,
+    execute_narration: bool = False,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session)
 ):
     """
     Start a game session (enter first step).
     Applies SESSION_STARTED event and enters first step.
+
+    Args:
+        execute_narration: If True, executes LLM narration tasks immediately (slower).
+                          If False, returns immediately without narration (faster initial load).
     """
     # Load session
     result = await db.execute(
@@ -423,8 +429,9 @@ async def start_session(
     session.started_at = datetime.utcnow()
     session.current_step_index = result.new_state.current_step_index
 
-    # Execute LLM tasks if any (Week 3)
-    if result.llm_tasks:
+    # Execute LLM tasks if requested (Week 3)
+    # Only execute if execute_narration is True for faster initial page load
+    if execute_narration and result.llm_tasks:
         updated_state, llm_events = await execute_llm_tasks(
             tasks=result.llm_tasks,
             state=result.new_state,
@@ -705,6 +712,30 @@ async def submit_action(
             sequence_number=event.sequence_number,
             state=result.new_state
         )
+
+        # Execute LLM tasks if any (for Simple challenges, this will be GM narration)
+        if result.llm_tasks:
+            updated_state, llm_events = await execute_llm_tasks(
+                tasks=result.llm_tasks,
+                state=result.new_state,
+                steps=steps,
+                db=db,
+                engine=engine
+            )
+
+            # Save LLM events
+            for idx, llm_event in enumerate(llm_events):
+                await append_and_snapshot(
+                    db=db,
+                    session_id=session_id,
+                    event_type=llm_event.event_type,
+                    event_data=llm_event.data,
+                    sequence_number=event.sequence_number + 1 + idx,
+                    state=updated_state
+                )
+
+            # Use updated state
+            result.new_state = updated_state
 
         # Update session record
         session.current_step_index = result.new_state.current_step_index

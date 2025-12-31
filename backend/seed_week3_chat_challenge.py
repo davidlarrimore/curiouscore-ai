@@ -80,6 +80,7 @@ async def seed_week3_challenge():
             description="Test challenge with CHAT step for LEM evaluation",
             tags=["test", "week3", "lem"],
             difficulty="beginner",
+            challenge_type="advanced",  # Multi-step challenge with MCQ_SINGLE and CHAT steps
             system_prompt="Test challenge for LEM evaluation",
             estimated_time_minutes=10,
             xp_reward=50,

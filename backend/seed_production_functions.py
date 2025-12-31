@@ -74,6 +74,7 @@ async def seed_functions_challenge():
             description="Master the fundamentals of functions in programming. Learn what functions are, why they're essential, and how to use them effectively.",
             tags=["beginner", "functions", "programming-basics"],
             difficulty="beginner",
+            challenge_type="advanced",  # Multi-step challenge with CONTINUE_GATE, MCQ, CHAT steps
             system_prompt="Teaching fundamental concepts of functions in programming",
             estimated_time_minutes=20,
             xp_reward=100,

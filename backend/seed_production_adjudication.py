@@ -65,6 +65,7 @@ async def seed_adjudication_challenge():
             description="Train as the adjudicator for sensitive requests. Practice applying policy, weighing risk signals, and responding with clear decisions and safe alternatives.",
             tags=["advanced", "safety", "policy", "risk"],
             difficulty="advanced",
+            challenge_type="advanced",  # Multi-step challenge with CONTINUE_GATE, MCQ, CHAT steps
             system_prompt="You are executing the Operation Adjudication Protocol: calmly assess sensitive requests, surface risk signals, decide allow/deny/escalate, and respond with concise rationale and safer alternatives.",
             estimated_time_minutes=30,
             xp_reward=200,

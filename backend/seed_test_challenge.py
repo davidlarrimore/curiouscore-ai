@@ -61,6 +61,7 @@ async def seed_test_challenge():
             title="Week 2 Test Challenge: Python Basics",
             description="A simple 3-step MCQ challenge to validate Week 2 implementation",
             difficulty="beginner",
+            challenge_type="advanced",  # Multi-step challenge with MCQ_SINGLE, MCQ_MULTI, TRUE_FALSE
             xp_reward=100,
             is_active=True,
             tags=["python", "basics", "test"],

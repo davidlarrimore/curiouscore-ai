@@ -1,7 +1,9 @@
 import json
+import logging
+import time
 from datetime import datetime
 from typing import List, AsyncIterator
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -34,8 +36,35 @@ from .schemas import ChatMessage
 from .session_endpoints import router as session_router
 from .admin_routes import router as admin_router
 
+# Configure logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    datefmt="%H:%M:%S",
+)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="CuriousCore API")
+
+# Request logging middleware
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start_time = time.time()
+
+    # Log incoming request
+    logger.info(f"➡️  {request.method} {request.url.path}")
+    logger.debug(f"   Headers: {dict(request.headers)}")
+    if request.query_params:
+        logger.debug(f"   Query params: {dict(request.query_params)}")
+
+    # Process request
+    response = await call_next(request)
+
+    # Log response
+    process_time = (time.time() - start_time) * 1000
+    logger.info(f"⬅️  {request.method} {request.url.path} → {response.status_code} ({process_time:.2f}ms)")
+
+    return response
 
 app.add_middleware(
     CORSMiddleware,
@@ -54,9 +83,12 @@ app.include_router(admin_router)
 
 @app.on_event("startup")
 async def on_startup():
+    logger.info("🚀 Application startup - initializing database...")
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    logger.info("🌱 Seeding initial data...")
     await _seed_initial_data()
+    logger.info("✅ Application startup complete")
 
 
 def user_to_schema(user: User) -> UserBase:
@@ -74,8 +106,10 @@ def user_to_schema(user: User) -> UserBase:
 
 @app.post("/auth/register", response_model=Token)
 async def register(payload: UserCreate, db: AsyncSession = Depends(get_session)):
+    logger.debug(f"Registration attempt for email: {payload.email}")
     existing = await db.execute(select(User).where(User.email == payload.email))
     if existing.scalars().first():
+        logger.warning(f"Registration failed: Email {payload.email} already registered")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
 
     admin_exists = await db.execute(select(User.id).where(User.role == "admin"))
@@ -90,6 +124,7 @@ async def register(payload: UserCreate, db: AsyncSession = Depends(get_session))
     db.add(user)
     await db.commit()
     await db.refresh(user)
+    logger.info(f"✅ User registered: {user.email} (role={user.role}, id={user.id})")
 
     token = create_access_token({"sub": user.id})
     return Token(access_token=token)
@@ -97,10 +132,13 @@ async def register(payload: UserCreate, db: AsyncSession = Depends(get_session))
 
 @app.post("/auth/login", response_model=Token)
 async def login(payload: UserLogin, db: AsyncSession = Depends(get_session)):
+    logger.debug(f"Login attempt for email: {payload.email}")
     result = await db.execute(select(User).where(User.email == payload.email))
     user = result.scalars().first()
     if not user or not verify_password(payload.password, user.hashed_password):
+        logger.warning(f"Login failed for email: {payload.email}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid credentials")
+    logger.info(f"✅ User logged in: {user.email} (id={user.id})")
     token = create_access_token({"sub": user.id})
     return Token(access_token=token)
 
@@ -363,6 +401,9 @@ async def chat(payload: ChatRequest, current_user: User = Depends(get_current_us
     if not payload.challengeId:
         raise HTTPException(status_code=400, detail="challengeId is required")
 
+    logger.debug(f"Chat request from user {current_user.id} for challenge {payload.challengeId}")
+    logger.debug(f"Message count: {len(payload.messages)}")
+
     challenge_result = await db.execute(
         select(Challenge).options(selectinload(Challenge.llm_config)).where(Challenge.id == payload.challengeId)
     )
@@ -428,7 +469,9 @@ async def chat(payload: ChatRequest, current_user: User = Depends(get_current_us
         system_prompt=system_prompt,
     )
 
+    logger.info(f"🤖 Calling LLM: {provider}/{model}")
     content = await llm_router.chat(chat_request)
+    logger.debug(f"LLM response length: {len(content) if content else 0} chars")
 
     metadata = None
     if content:

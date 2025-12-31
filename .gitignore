@@ -36,3 +36,7 @@ backend/**/__pycache__/
 #Ignore Database
 backend/app.db
 .env
+
+# Docker
+.docker/
+docker-compose.override.yml
